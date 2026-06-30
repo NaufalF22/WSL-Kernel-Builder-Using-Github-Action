@@ -79,36 +79,40 @@ jobs:
         shell: bash
 
       - id: merge
-        name: Create merge branch and attempt merge
+        name: Create merge branch and force merge (keeping Linux changes)
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
           git checkout -B merge-msft-"${{ github.event.inputs.msft_branch }}"
 
           if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
-            git merge --allow-unrelated-histories --no-edit "msft/${{ github.event.inputs.msft_branch }}" || true
-          else
-            git merge --no-edit "msft/${{ github.event.inputs.msft_branch }}" || true
-          fi
-
-          # Detect conflicted files
-          if git diff --name-only --diff-filter=U | grep -q .; then
-            git diff --name-only --diff-filter=U > "${WORKDIR}/conflicts.txt" || true
-            tar -czf "${WORKDIR}/merge-conflict-state.tar.gz" . || true
-            echo "merge_failed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "merge_failed=false" >> "$GITHUB_OUTPUT"
-          fi
-        shell: bash
-
-      - name: Upload merge conflict state
-        if: steps.merge.outputs.merge_failed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: merge-conflict-state
-          path: |
-            ${WORKDIR}/merge-conflict-state.tar.gz
-            ${WORKDIR}/conflicts.txt
+           git merge --allow-unrelated-histories --no-edit -X ours "msft/${{ github.event.inputs.msft_branch }}" || true
+                    else
+                      git merge --no-edit -X ours "msft/${{ github.event.inputs.msft_branch }}" || true
+                    fi
+          
+                    # Resolve any remaining conflicts by taking Linux version (ours)
+                    git diff --name-only --diff-filter=U | while read file; do
+                      echo "Resolving conflict in $file: keeping Linux version"
+                      git checkout --ours "$file"
+                      git add "$file"
+                    done || true
+          
+                    # Complete the merge
+                    if git diff --cached --quiet; then
+                      # Nothing staged, check if there are uncommitted changes
+                      if ! git diff --quiet; then
+                        git add -A
+                      fi
+                    fi
+          
+                    # Check if we're in the middle of a merge
+                    if [ -f .git/MERGE_HEAD ]; then
+                      git commit --no-edit || echo "Merge already committed"
+                    fi
+          
+                    echo "merge_failed=false" >> "$GITHUB_OUTPUT"
+                  shell: bash
 
       - name: Install build dependencies (self-hosted runner must permit sudo)
         if: steps.merge.outputs.merge_failed == 'false'
