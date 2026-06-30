@@ -1,0 +1,161 @@
+name: Merge and Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      msft_branch:
+        description: 'MSFT branch to fetch'
+        required: false
+        default: 'linux-msft-wsl-6.18.y'
+      kernel_ref:
+        description: 'kernel.org git ref or tag (e.g. linux-7.1.2 or linux-7.1.y)'
+        required: false
+        default: 'linux-7.1.2'
+      use_tarball:
+        description: 'If true, download kernel tarball instead of cloning git (less recommended)'
+        required: false
+        default: 'false'
+      build_deb:
+        description: 'Produce Debian packages'
+        required: false
+        default: 'false'
+      runner_type:
+        description: 'Prefer runner label; this workflow defaults to a self-hosted runner labeled "kernel-builder"'
+        required: false
+        default: 'self-hosted'
+
+jobs:
+  merge-build:
+    # Default to self-hosted but you can edit this file to use ubuntu-latest if you don't have a self-hosted runner.
+    runs-on: [ self-hosted, kernel-builder ]
+    env:
+      MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
+      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+      WORKDIR: ${{ github.workspace }}/kernel-work
+
+    steps:
+      - name: Checkout workflow repo (for scripts/artifacts)
+        uses: actions/checkout@v4
+
+      - name: Prepare workdir
+        run: |
+          rm -rf "${WORKDIR}"
+          mkdir -p "${WORKDIR}"
+
+      - name: Fetch kernel source (git or tarball)
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+
+          # Normalize kernel_ref and derive tarball name when needed
+          KREF="${{ github.event.inputs.kernel_ref }}"
+          # If the ref starts with "linux-", strip it for tarball naming
+          KREF_STRIPPED=$(echo "${KREF}" | sed 's/^linux-//')
+
+          if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
+            TARBALL="linux-${KREF_STRIPPED}.tar.xz"
+            echo "Downloading tarball from kernel.org: ${TARBALL}"
+            curl -L -o "${TARBALL}" "https://cdn.kernel.org/pub/linux/kernel/v7.x/${TARBALL}" || { echo "Tarball download failed"; exit 1; }
+            mkdir src && tar -xJf "${TARBALL}" -C src --strip-components=1
+            cd src
+            git init
+            git add -A
+            git commit -m "Import ${TARBALL} from kernel.org"
+          else
+            echo "Cloning kernel.org stable repo (shallow)..."
+            git clone --depth=1 --branch "${KREF}" "${KERNEL_GIT}" src || (
+              echo "Shallow clone of ${KREF} failed, falling back to linux-7.1.y shallow clone and trying to fetch ${KREF}" && 
+              git clone --depth=1 --branch linux-7.1.y "${KERNEL_GIT}" src && 
+              cd src && git fetch --depth=1 origin "${KREF}" && git checkout "${KREF}" || true
+            )
+            cd src
+          fi
+
+      - name: Add MSFT remote & fetch branch
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          git remote add msft "${MSFT_REMOTE}" || git remote set-url msft "${MSFT_REMOTE}"
+          git fetch --no-tags --depth=1 msft "${{ github.event.inputs.msft_branch }}" || { echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}"; exit 2; }
+        shell: bash
+
+      - id: merge
+        name: Create merge branch and attempt merge
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          git checkout -B merge-msft-"${{ github.event.inputs.msft_branch }}"
+
+          if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
+            git merge --allow-unrelated-histories --no-edit "msft/${{ github.event.inputs.msft_branch }}" || true
+          else
+            git merge --no-edit "msft/${{ github.event.inputs.msft_branch }}" || true
+          fi
+
+          # Detect conflicted files
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            git diff --name-only --diff-filter=U > "${WORKDIR}/conflicts.txt" || true
+            tar -czf "${WORKDIR}/merge-conflict-state.tar.gz" . || true
+            echo "merge_failed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge_failed=false" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Upload merge conflict state
+        if: steps.merge.outputs.merge_failed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: merge-conflict-state
+          path: |
+            ${WORKDIR}/merge-conflict-state.tar.gz
+            ${WORKDIR}/conflicts.txt
+
+      - name: Install build dependencies (self-hosted runner must permit sudo)
+        if: steps.merge.outputs.merge_failed == 'false'
+        run: |
+          set -euo pipefail
+          # Adjust this block if your self-hosted runner uses a non-Debian distro
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl
+        shell: bash
+
+      - name: Configure kernel
+        if: steps.merge.outputs.merge_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          if [ -f /boot/config-$(uname -r) ]; then
+            cp /boot/config-$(uname -r) .config
+            yes "" | make olddefconfig
+          else
+            make defconfig
+          fi
+        shell: bash
+
+      - name: Build kernel (and optionally debs)
+        if: steps.merge.outputs.merge_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          JOBS=$(nproc || echo 1)
+          if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
+            fakeroot make -j"${JOBS}" deb-pkg LOCALVERSION=-msft
+            ls -lh .. || true
+          else
+            make -j"${JOBS}"
+            sudo make modules_install || true
+            sudo make install || true
+          fi
+        shell: bash
+
+      - name: Upload build artifacts
+        if: steps.merge.outputs.merge_failed == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-artifacts
+          path: |
+            ${WORKDIR}/src/arch/*/boot/*
+            ${WORKDIR}/src/*.deb
+            ${WORKDIR}/src/../*.deb
+            ${WORKDIR}/src/*.tar.gz
