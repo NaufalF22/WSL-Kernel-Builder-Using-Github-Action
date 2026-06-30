@@ -47,7 +47,7 @@ jobs:
           KREF="${{ github.event.inputs.kernel_ref }}"
 
           if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
-            TARBALL="${KREF_STRIPPED}.tar.xz"
+            TARBALL="${KREF}.tar.xz"
             echo "Downloading tarball from kernel.org: ${TARBALL}"
             curl -L -o "${TARBALL}" "https://cdn.kernel.org/pub/linux/kernel/v7.x/${TARBALL}" || { echo "Tarball download failed"; exit 1; }
             mkdir src && tar -xJf "${TARBALL}" -C src --strip-components=1
