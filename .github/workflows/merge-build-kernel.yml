@@ -30,7 +30,7 @@ jobs:
     runs-on: [ ubuntu-latest ]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
-      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tag/
       WORKDIR: ${{ github.workspace }}/kernel-work
 
     steps:
@@ -49,11 +49,9 @@ jobs:
 
           # Normalize kernel_ref and derive tarball name when needed
           KREF="${{ github.event.inputs.kernel_ref }}"
-          # If the ref starts with "linux-", strip it for tarball naming
-          KREF_STRIPPED=$(echo "${KREF}" | sed 's/^linux-//')
 
           if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
-            TARBALL="linux-${KREF_STRIPPED}.tar.xz"
+            TARBALL="${KREF_STRIPPED}.tar.xz"
             echo "Downloading tarball from kernel.org: ${TARBALL}"
             curl -L -o "${TARBALL}" "https://cdn.kernel.org/pub/linux/kernel/v7.x/${TARBALL}" || { echo "Tarball download failed"; exit 1; }
             mkdir src && tar -xJf "${TARBALL}" -C src --strip-components=1
