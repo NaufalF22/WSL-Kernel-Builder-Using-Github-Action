@@ -73,7 +73,8 @@ jobs:
       - name: Add MSFT remote & fetch branch
         run: |
           set -euo pipefail
-          cd "${WORKDIR}/src"
+          echo "${WORKDIR}/msft"
+          cd "${WORKDIR}/msft"
           git remote add msft "${MSFT_REMOTE}" || git remote set-url msft "${MSFT_REMOTE}"
           git fetch --no-tags --depth=1 msft "${{ github.event.inputs.msft_branch }}" || { echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}"; exit 2; }
         shell: bash
@@ -113,6 +114,7 @@ jobs:
           
                     echo "merge_failed=false" >> "$GITHUB_OUTPUT"
         shell: bash
+        
       - name: Remove files not in MSFT branch (keep only MSFT files)
         if: steps.merge.outputs.merge_failed == 'false'
         run: |
@@ -141,6 +143,7 @@ jobs:
           
           # Cleanup temp files
           rm -f /tmp/msft_files.txt /tmp/linux_files.txt
+          rm -f ${WORKDIR}/msft
           
           # Stage any deletions
           git add -A || true
