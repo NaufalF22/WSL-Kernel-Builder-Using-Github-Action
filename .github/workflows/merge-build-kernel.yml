@@ -27,7 +27,7 @@ on:
 jobs:
   merge-build:
     # Default to self-hosted but you can edit this file to use ubuntu-latest if you don't have a self-hosted runner.
-    runs-on: [ self-hosted, kernel-builder ]
+    runs-on: [ ubuntu-latest ]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
