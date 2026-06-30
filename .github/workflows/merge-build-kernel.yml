@@ -125,15 +125,22 @@ jobs:
           echo "Getting list of files in current HEAD..."
           LINUX_FILES=$(git ls-tree -r --name-only HEAD | sort)
           
+          # Create temp files to avoid broken pipes
+          echo "$MSFT_FILES" > /tmp/msft_files.txt
+          echo "$LINUX_FILES" > /tmp/linux_files.txt
+          
           # Find files that exist in Linux but NOT in MSFT, and delete them
-          echo "$LINUX_FILES" | while read -r file; do
-            if ! echo "$MSFT_FILES" | grep -q "^${file}$"; then
+          while IFS= read -r file; do
+            if ! grep -q "^${file}$" /tmp/msft_files.txt; then
               if [ -f "$file" ]; then
                 echo "Removing file not in MSFT: $file"
                 git rm "$file" 2>/dev/null || rm -f "$file"
               fi
             fi
-          done
+          done < /tmp/linux_files.txt
+          
+          # Cleanup temp files
+          rm -f /tmp/msft_files.txt /tmp/linux_files.txt
           
           # Stage any deletions
           git add -A || true
@@ -146,7 +153,7 @@ jobs:
           echo "Disk space after cleanup:"
           du -sh "${WORKDIR}/src" || true
         shell: bash
-
+        
       - name: Install build dependencies (self-hosted runner must permit sudo)
         if: steps.merge.outputs.merge_failed == 'false'
         run: |
