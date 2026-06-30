@@ -73,7 +73,7 @@ jobs:
       - name: Add MSFT remote & fetch branch
         run: |
           set -euo pipefail
-          echo "${WORKDIR}/msft"
+          mkdir "${WORKDIR}/msft"
           cd "${WORKDIR}/msft"
           git remote add msft "${MSFT_REMOTE}" || git remote set-url msft "${MSFT_REMOTE}"
           git fetch --no-tags --depth=1 msft "${{ github.event.inputs.msft_branch }}" || { echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}"; exit 2; }
