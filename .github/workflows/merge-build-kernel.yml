@@ -14,7 +14,7 @@ on:
       use_tarball:
         description: 'If true, download kernel tarball instead of cloning git (less recommended)'
         required: false
-        default: 'false'
+        default: 'true'
       build_deb:
         description: 'Produce Debian packages'
         required: false
@@ -23,7 +23,7 @@ on:
 jobs:
   merge-build:
     # Default to self-hosted but you can edit this file to use ubuntu-latest if you don't have a self-hosted runner.
-    runs-on: [ubuntu-latest]
+    runs-on: [debian-latest]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
@@ -112,6 +112,39 @@ jobs:
                     fi
           
                     echo "merge_failed=false" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - name: Remove files not in MSFT branch (keep only MSFT files)
+        if: steps.merge.outputs.merge_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          
+          echo "Getting list of files in MSFT branch..."
+          MSFT_FILES=$(git ls-tree -r --name-only "msft/${{ github.event.inputs.msft_branch }}" | sort)
+          
+          echo "Getting list of files in current HEAD..."
+          LINUX_FILES=$(git ls-tree -r --name-only HEAD | sort)
+          
+          # Find files that exist in Linux but NOT in MSFT, and delete them
+          echo "$LINUX_FILES" | while read -r file; do
+            if ! echo "$MSFT_FILES" | grep -q "^${file}$"; then
+              if [ -f "$file" ]; then
+                echo "Removing file not in MSFT: $file"
+                git rm "$file" 2>/dev/null || rm -f "$file"
+              fi
+            fi
+          done
+          
+          # Stage any deletions
+          git add -A || true
+          
+          # Commit if there are staged changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove files not present in MSFT branch - keep only MSFT files" || true
+          fi
+          
+          echo "Disk space after cleanup:"
+          du -sh "${WORKDIR}/src" || true
         shell: bash
 
       - name: Install build dependencies (self-hosted runner must permit sudo)
