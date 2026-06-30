@@ -128,10 +128,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ -f /boot/config-$(uname -r) ]; then
+          if [ -f Microsoft/config-wsl ]; then
+            cp Microsoft/config-wsl .config
+            make olddefconfig
+          elif [ -f /boot/config-$(uname -r) ]; then
             cp /boot/config-$(uname -r) .config
-            make menuconfig KCONFIG_CONFIG=Microsoft/config-wsl
-            make KCONFIG_CONFIG=Microsoft/config-wsl && make INSTALL_MOD_PATH="$PWD/modules" modules_install
+            make olddefconfig
           else
             make defconfig
           fi
