@@ -112,7 +112,7 @@ jobs:
                     fi
           
                     echo "merge_failed=false" >> "$GITHUB_OUTPUT"
-                  shell: bash
+        shell: bash
 
       - name: Install build dependencies (self-hosted runner must permit sudo)
         if: steps.merge.outputs.merge_failed == 'false'
