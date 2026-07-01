@@ -22,7 +22,6 @@ on:
 
 jobs:
   merge-build:
-    # Default to self-hosted but you can edit this file to use ubuntu-latest if you don't have a self-hosted runner.
     runs-on: [ubuntu-latest]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
@@ -32,12 +31,12 @@ jobs:
     steps:
       - name: Checkout workflow repo (for scripts/artifacts)
         uses: actions/checkout@v4
-        
+
       - name: Configure Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
+
       - name: Prepare workdir
         run: |
           rm -rf "${WORKDIR}"
@@ -69,104 +68,100 @@ jobs:
             )
             cd src
           fi
-
-      - name: Add MSFT remote & fetch branch
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
-          git remote add msft "${MSFT_REMOTE}" || git remote set-url msft "${MSFT_REMOTE}"
-          git fetch --no-tags --depth=1 msft "${{ github.event.inputs.msft_branch }}" || { echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}"; exit 2; }
         shell: bash
 
-      - id: merge
-        name: Create merge branch and force merge (keeping Linux changes)
+      - id: fetch_msft
+        name: Clone MSFT into separate folder
         run: |
           set -euo pipefail
-          cd "${WORKDIR}/src"
-          git checkout -B merge-msft-"${{ github.event.inputs.msft_branch }}"
-
-          if [ "${{ github.event.inputs.use_tarball }}" = "true" ]; then
-           git merge --allow-unrelated-histories --no-edit -X ours "msft/${{ github.event.inputs.msft_branch }}" || true
-                    else
-                      git merge --no-edit -X ours "msft/${{ github.event.inputs.msft_branch }}" || true
-                    fi
-          
-                    # Resolve any remaining conflicts by taking Linux version (ours)
-                    git diff --name-only --diff-filter=U | while read file; do
-                      echo "Resolving conflict in $file: keeping Linux version"
-                      git checkout --ours "$file"
-                      git add "$file"
-                    done || true
-          
-                    # Complete the merge
-                    if git diff --cached --quiet; then
-                      # Nothing staged, check if there are uncommitted changes
-                      if ! git diff --quiet; then
-                        git add -A
-                      fi
-                    fi
-          
-                    # Check if we're in the middle of a merge
-                    if [ -f .git/MERGE_HEAD ]; then
-                      git commit --no-edit || echo "Merge already committed"
-                    fi
-          
-                    echo "merge_failed=false" >> "$GITHUB_OUTPUT"
+          cd "${WORKDIR}"
+          rm -rf msft_src || true
+          # Try a shallow clone of the MSFT branch into msft_src
+          if git clone --depth=1 --branch "${{ github.event.inputs.msft_branch }}" "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+            echo "Cloned msft/${{ github.event.inputs.msft_branch }} into msft_src"
+            echo "msft_failed=false" >> "$GITHUB_OUTPUT"
+          else
+            # Fallback: clone default branch then try to fetch the requested branch
+            if git clone --depth=1 "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+              cd msft_src
+              if git fetch --depth=1 origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
+                echo "Fetched msft/${{ github.event.inputs.msft_branch }} into msft_src"
+                echo "msft_failed=false" >> "$GITHUB_OUTPUT"
+              else
+                echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}" >&2
+                echo "msft_failed=true" >> "$GITHUB_OUTPUT"
+                exit 2
+              fi
+            else
+              echo "Failed to clone MSFT repo" >&2
+              echo "msft_failed=true" >> "$GITHUB_OUTPUT"
+              exit 2
+            fi
+          fi
         shell: bash
-        
-      - name: Remove files not in MSFT branch (keep only MSFT files)
-        if: steps.merge.outputs.merge_failed == 'false'
+
+      - name: Delete Linux-only files (keep overlapping files unchanged)
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          
-          echo "Getting list of files in MSFT branch..."
-          MSFT_FILES=$(git ls-tree -r --name-only "msft/${{ github.event.inputs.msft_branch }}" | sort)
-          
-          echo "Getting list of files in current HEAD..."
-          LINUX_FILES=$(git ls-tree -r --name-only HEAD | sort)
-          
-          # Create temp files to avoid broken pipes
-          echo "$MSFT_FILES" > /tmp/msft_files.txt
-          echo "$LINUX_FILES" > /tmp/linux_files.txt
-          
-          # Find files that exist in Linux but NOT in MSFT, and delete them
+
+          echo "Listing files in msft_src..."
+          (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > /tmp/msft_files.txt || true
+          echo "Listing files in linux src..."
+          git ls-tree -r --name-only HEAD | sort > /tmp/linux_files.txt || true
+
+          echo "Linux-only files to be removed (not present in MSFT):"
           while IFS= read -r file; do
-            if ! grep -q "^${file}$" /tmp/msft_files.txt; then
+            if ! grep -qFx "$file" /tmp/msft_files.txt; then
               if [ -f "$file" ]; then
-                echo "Removing file not in MSFT: $file"
-                git rm "$file" 2>/dev/null || rm -f "$file"
+                echo "$file"
               fi
             fi
-          done < /tmp/linux_files.txt
-          
-          # Cleanup temp files
-          rm -f /tmp/msft_files.txt /tmp/linux_files.txt
-          rm -f ${WORKDIR}/msft
-          
-          # Stage any deletions
-          git add -A || true
-          
-          # Commit if there are staged changes
-          if ! git diff --cached --quiet; then
-            git commit -m "Remove files not present in MSFT branch - keep only MSFT files" || true
+          done < /tmp/linux_files.txt > /tmp/linux_only_files.txt || true
+
+          # Remove Linux-only files (leave overlapping files unchanged)
+          if [ -s /tmp/linux_only_files.txt ]; then
+            while IFS= read -r file; do
+              echo "Removing Linux-only file: $file"
+              git rm "$file" 2>/dev/null || rm -f "$file"
+            done < /tmp/linux_only_files.txt
+          else
+            echo "No Linux-only files found; nothing to remove."
           fi
-          
-          echo "Disk space after cleanup:"
+
+          # Cleanup temp lists
+          rm -f /tmp/msft_files.txt /tmp/linux_files.txt /tmp/linux_only_files.txt || true
+
+          # Commit removals if any
+          git add -A || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove files not present in MSFT branch (kept overlapping files unchanged)" || true
+          else
+            echo "No deletions to commit"
+          fi
+
+          # Remove msft clone to free space and garbage collect
+          cd "${WORKDIR}"
+          rm -rf msft_src || true
+          cd "${WORKDIR}/src"
+          git reflog expire --all --expire=now || true
+          git gc --prune=now --aggressive || true
+
+          echo "Disk usage for ${WORKDIR}/src after cleanup:"
           du -sh "${WORKDIR}/src" || true
         shell: bash
-        
+
       - name: Install build dependencies (self-hosted runner must permit sudo)
-        if: steps.merge.outputs.merge_failed == 'false'
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
-          # Adjust this block if your self-hosted runner uses a non-Debian distro
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
         shell: bash
 
       - name: Configure kernel
-        if: steps.merge.outputs.merge_failed == 'false'
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
@@ -182,7 +177,7 @@ jobs:
         shell: bash
 
       - name: Build kernel (and optionally debs)
-        if: steps.merge.outputs.merge_failed == 'false'
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
@@ -198,7 +193,7 @@ jobs:
         shell: bash
 
       - name: Upload build artifacts
-        if: steps.merge.outputs.merge_failed == 'false'
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: kernel-build-artifacts
