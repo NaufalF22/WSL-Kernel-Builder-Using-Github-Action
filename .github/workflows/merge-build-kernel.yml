@@ -100,6 +100,23 @@ jobs:
           fi
         shell: bash
 
+      - name: Copy arch/x86/configs/ from MSFT (prefer MSFT files)
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          # Copy arch/x86/configs/ from MSFT (MSFT files override Linux files)
+          if [ -d "${WORKDIR}/msft_src/arch/x86/configs" ]; then
+            echo "Copying arch/x86/configs/ from MSFT..."
+            cp -rf "${WORKDIR}/msft_src/arch/x86/configs/"* ${WORKDIR}/src/arch/x86/configs/ 2>/dev/null || true
+            git add arch/x86/configs/ || true
+            if ! git diff --cached --quiet; then
+              git commit -m "Add MSFT arch/x86/configs (prefer MSFT versions)" || true
+            fi
+          fi
+        shell: bash
+
       - name: Delete Linux-only files (keep overlapping files unchanged)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
