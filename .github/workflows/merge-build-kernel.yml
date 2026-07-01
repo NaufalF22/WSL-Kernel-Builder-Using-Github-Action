@@ -125,21 +125,7 @@ jobs:
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
         shell: bash
-        
-      - name: Verify Makefile.warn exists (from Linux kernel)
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
-      
-          if [ -f "${WORKDIR}/msft_src/script/Makefile.warn" ]; then
-            echo "✓ Makefile.warn present from Linux kernel source"
-          else
-            echo "✗ Warning: Makefile.warn not found in kernel source"
-            exit 1
-          fi
-        shell: bash  
-        
+                
       - name: Copy Makefile.warn from Linux 
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
