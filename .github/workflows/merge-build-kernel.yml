@@ -201,8 +201,8 @@ jobs:
           cd "${WORKDIR}/src"
           
           # Use the WSL config file from arch/x86/configs
-          echo "Applying KCONFIG_CONFIG=arch/x86/configs/config-wsl"
-          make KCONFIG_CONFIG=arch/x86/configs/config-wsl
+          echo "Applying KCONFIG_CONFIG=${WORKDIR}/src/arch/x86/configs/config-wsl"
+          make KCONFIG_CONFIG=${WORKDIR}/src/arch/x86/configs/config-wsl
           
           JOBS=$(nproc || echo 1)
             make -j"${JOBS}"
