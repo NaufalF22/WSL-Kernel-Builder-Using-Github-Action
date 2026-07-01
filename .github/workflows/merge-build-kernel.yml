@@ -124,62 +124,15 @@ jobs:
           else
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
+          #copy microsoft folder
+          cp -r "${WORKDIR}/msft_src/Microsoft/"* ${WORKDIR}/src
         shell: bash
         
-      - name: Delete Linux-only files (keep overlapping files unchanged)
+      - name: Delete MSFT folder
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-
-          echo "Listing files in msft_src..."
-          (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > /tmp/msft_files.txt || true
-          echo "Listing files in linux src..."
-          git ls-tree -r --name-only HEAD | sort > /tmp/linux_files.txt || true
-
-          #copy makefile.warn to tmp
-          echo "copy makefile.warn to tmp"
-          cp "${WORKDIR}/src/scripts/Makefile.warn" /tmp/
-
-          #copy liveupdate to tmp
-          echo "copy liveupdate to tmp"
-          cp -rf "${WORKDIR}/src/kernel/liveupdate"* /tmp/
-          
-          echo "Linux-only files to be removed (not present in MSFT):"
-          while IFS= read -r file; do
-            if ! grep -qFx "$file" /tmp/msft_files.txt; then
-              if [ -f "$file" ]; then
-                echo "$file"
-              fi
-            fi
-          done < /tmp/linux_files.txt > /tmp/linux_only_files.txt || true
-
-          # Remove Linux-only files (leave overlapping files unchanged)
-          if [ -s /tmp/linux_only_files.txt ]; then
-            while IFS= read -r file; do
-              echo "Removing Linux-only file: $file"
-              git rm "$file" 2>/dev/null || rm -f "$file"
-            done < /tmp/linux_only_files.txt
-          else
-            echo "No Linux-only files found; nothing to remove."
-          fi
-          
-          # copy makefile.warn to src
-          cp "/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
-
-          #copy liveupdate to src
-          cp -rf "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
-          
-          # Cleanup temp 
-          rm -rf /tmp
-          
-          # Commit removals if any
-          git add -A || true
-          if ! git diff --cached --quiet; then
-            git commit -m "Remove files not present in MSFT branch (kept overlapping files unchanged)" || true
-          else
-            echo "No deletions to commit"
-          fi
 
           # Remove msft clone to free space and garbage collect
           cd "${WORKDIR}"
@@ -217,7 +170,7 @@ jobs:
           
           # Use the WSL config file from arch/x86/configs
           echo "Applying KCONFIG_CONFIG and build the kernel"
-          make -j$(nproc) KCONFIG_CONFIG=${WORKDIR}/src/arch/x86/configs/config-wsl
+          make -j$(nproc) KCONFIG_CONFIG=${WORKDIR}/src/Microsoft/config-wsl
 
             sudo make modules_install || true
             sudo make install || true
