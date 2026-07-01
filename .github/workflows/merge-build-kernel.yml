@@ -167,18 +167,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          # path where we copied Microsoft configs into src/
-              KCONF="${WORKDIR}/src/Microsoft/config-wsl"
-          
-              if [ -f "${KCONF}" ]; then
-                echo "Applying config from ${KCONF}"
-                # copy it to .config so kernel build uses it, then make olddefconfig to fill any new options
-                cp "${KCONF}" .config
-                make olddefconfig
-              else
-                echo "Warning: ${KCONF} not found; continuing with existing config"
-                ls -la "${WORKDIR}/src" || true
-              fi
+
+          make KCONFIG_CONFIG="${WORKDIR}/src/Microsoft/config-wsl"
           make -j$(nproc)
 
             sudo make modules_install || true
