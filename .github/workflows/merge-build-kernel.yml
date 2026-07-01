@@ -162,8 +162,8 @@ jobs:
             echo "MSFT Makefile.warn found, keeping it"
           else
             echo "MSFT Makefile.warn not found"
-            fi
-            fi
+           fi
+          fi
         shell: bash    
         
       - name: Delete Linux-only files (keep overlapping files unchanged)
