@@ -106,17 +106,25 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
 
-          # Copy arch/x86/configs/ from MSFT (MSFT files override Linux files)
+          # Delete the existing arch/x86/configs directory
+          if [ -d "arch/x86/configs" ]; then
+            echo "Deleting arch/x86/configs/..."
+            git rm -r arch/x86/configs/ 2>/dev/null || rm -rf arch/x86/configs/
+          fi
+
+          # Copy arch/x86/configs/ from MSFT
           if [ -d "${WORKDIR}/msft_src/arch/x86/configs" ]; then
             echo "Copying arch/x86/configs/ from MSFT..."
-            cp -rf "${WORKDIR}/msft_src/arch/x86/configs/"* ${WORKDIR}/src/arch/x86/configs/ 2>/dev/null || true
+            mkdir -p arch/x86/configs
+            cp -rf "${WORKDIR}/msft_src/arch/x86/configs/"* arch/x86/configs/ 2>/dev/null || true
             git add arch/x86/configs/ || true
             if ! git diff --cached --quiet; then
-              git commit -m "Add MSFT arch/x86/configs (prefer MSFT versions)" || true
+            git commit -m "Replace arch/x86/configs with MSFT version" || true
             fi
+          else
+            echo "Warning: MSFT arch/x86/configs/ not found"
           fi
         shell: bash
-
       - name: Delete Linux-only files (keep overlapping files unchanged)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
