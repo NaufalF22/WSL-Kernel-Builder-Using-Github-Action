@@ -100,9 +100,9 @@ jobs:
           fi
           # If the MSFT clone exists, rename Makefile.extrawarn to Makefile.warn (filesystem and commit where possible)
           if [ -d "msft_src" ]; then
-            if [ -f "msft_src/script/Makefile.extrawarn" ]; then
+            if [ -f "${WORKDIR}/msft_src/script/Makefile.extrawarn" ]; then
               echo "Renaming msft_src/script/Makefile.extrawarn -> msft_src/script/Makefile.warn"
-              mv "msft_src/script/Makefile.extrawarn" "msft_src/script/Makefile.warn" || true
+              mv "${WORKDIR}/msft_src/script/Makefile.extrawarn" "${WORKDIR}/msft_src/script/Makefile.warn" || true
               # Commit the rename in the msft clone if it's a git repo
               if [ -d "msft_src/.git" ]; then
                 (cd msft_src && git add -A && git commit -m "Rename Makefile.extrawarn to Makefile.warn" || true)
