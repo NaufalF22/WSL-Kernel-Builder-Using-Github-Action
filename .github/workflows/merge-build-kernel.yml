@@ -139,7 +139,7 @@ jobs:
             echo "MSFT Makefile.warn not found, copying from Linux kernel source..."
             if [ -f "${WORKDIR}/src/scripts/Makefile.warn" ]; then
               # Ensure script directory exists
-              cp "${WORKDIR}/src/scripts/Makefile.warn" script/
+              cp "${WORKDIR}/src/scripts/Makefile.warn" scripts/
               git add scripts/Makefile.warn || true
               if ! git diff --cached --quiet; then
                 git commit -m "Add Makefile.warn from Linux kernel" || true
