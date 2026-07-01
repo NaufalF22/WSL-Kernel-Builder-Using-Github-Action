@@ -185,20 +185,13 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
         shell: bash
 
-      - name: Configure kernel
+      - name: Configure kernel with all features enabled
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ -f /src/arch/x86/configs/config-wsl ]; then
-            cp /src/arch/x86/configs/config-wsl .config
-            make olddefconfig
-          elif [ -f /boot/config-$(uname -r) ]; then
-            cp /boot/config-$(uname -r) .config
-            make olddefconfig
-          else
-            make defconfig
-          fi
+          echo "Generating kernel config with all features enabled (allyesconfig)..."
+          make allyesconfig
         shell: bash
 
       - name: Build kernel (and optionally debs)
