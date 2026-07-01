@@ -184,7 +184,11 @@ jobs:
           while IFS= read -r file; do
             if ! grep -qFx "$file" /tmp/msft_files.txt; then
               echo "  Removing: $file"
-              git rm "$file" 2>/dev/null || rm -f "$file"
+              # First try git rm, if it fails, use rm -f instead
+              if ! git rm "$file" 2>/dev/null; then
+                echo "    git rm failed, using rm -f instead"
+                rm -f "$file" || echo "    Warning: Failed to remove $file"
+              fi
               ((FILES_TO_REMOVE++))
             fi
           done < /tmp/linux_files.txt
