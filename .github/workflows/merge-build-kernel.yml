@@ -143,7 +143,7 @@ jobs:
 
           #copy liveupdate to tmp
           echo "copy liveupdate to tmp"
-          cp "${WORKDIR}/src/kernel/liveupdate"* /tmp/
+          cp -rf "${WORKDIR}/src/kernel/liveupdate"* /tmp/
           
           echo "Linux-only files to be removed (not present in MSFT):"
           while IFS= read -r file; do
@@ -168,7 +168,7 @@ jobs:
           cp "/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
 
           #copy liveupdate to src
-          cp "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
+          cp -rf "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
           
           # Cleanup temp 
           rm -rf /tmp
