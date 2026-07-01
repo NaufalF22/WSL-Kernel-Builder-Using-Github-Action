@@ -190,8 +190,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ -f arch/x86/configs/config-wsl ]; then
-            cp arch/x86/configs/config-wsl .config
+          if [ -f /src/arch/x86/configs/config-wsl ]; then
+            cp /src/arch/x86/configs/config-wsl .config
             make olddefconfig
           elif [ -f /boot/config-$(uname -r) ]; then
             cp /boot/config-$(uname -r) .config
