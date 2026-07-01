@@ -125,45 +125,6 @@ jobs:
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
         shell: bash
-                
-      - name: Copy Makefile.warn from Linux 
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
-
-          # Check if MSFT has Makefile.warn
-          if [ -f "${WORKDIR}/msft_src/scripts/Makefile.warn" ]; then
-            echo "MSFT Makefile.warn found, keeping it"
-          else
-            echo "MSFT Makefile.warn not found, copying from Linux kernel source..."
-            if [ -f "${WORKDIR}/src/scripts/Makefile.warn" ]; then
-              # Ensure script directory exists
-              cp "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/msft_src/scripts/"
-              git add scripts/Makefile.warn || true
-              if ! git diff --cached --quiet; then
-                git commit -m "Add Makefile.warn from Linux kernel" || true
-              fi
-              echo "✓ Makefile.warn copied from Linux kernel"
-            else
-              echo "✗ Warning: Makefile.warn not found in either MSFT or Linux source"
-            fi
-          fi
-        shell: bash
-        
-      - name: Recheck Makefile on msft
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
-
-          # Check if MSFT has Makefile.warn
-          if [ -f "${WORKDIR}/msft_src/scripts/Makefile.warn" ]; then
-            echo "MSFT Makefile.warn found, keeping it"
-          else
-            echo "MSFT Makefile.warn not found"
-           fi
-        shell: bash    
         
       - name: Delete Linux-only files (keep overlapping files unchanged)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
@@ -171,37 +132,36 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
 
-          echo "Comparing file lists between kernel and MSFT sources..."
-          
-          # Create sorted file lists
-          git -C "${WORKDIR}/msft_src" ls-tree -r --name-only HEAD 2>/dev/null | sort > /tmp/msft_files.txt || { echo "Warning: Could not list MSFT files"; touch /tmp/msft_files.txt; }
-          git ls-tree -r --name-only HEAD 2>/dev/null | sort > /tmp/linux_files.txt || { echo "Warning: Could not list Linux files"; touch /tmp/linux_files.txt; }
+          echo "Listing files in msft_src..."
+          (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > /tmp/msft_files.txt || true
+          echo "Listing files in linux src..."
+          git ls-tree -r --name-only HEAD | sort > /tmp/linux_files.txt || true
 
-          # Find and remove Linux-only files
-          echo "Identifying Linux-only files (not present in MSFT)..."
-          FILES_TO_REMOVE=0
+          #copy makefile.warn to tmp
+          cp "${WORKDIR}/src/scripts/Makefile.warn" /tmp/
           
+          echo "Linux-only files to be removed (not present in MSFT):"
           while IFS= read -r file; do
             if ! grep -qFx "$file" /tmp/msft_files.txt; then
-              echo "  Removing: $file"
-              # First try git rm, if it fails, use rm -f instead
-              if ! git rm "$file" 2>/dev/null; then
-                echo "    git rm failed, using rm -f instead"
-                rm -f "$file" || echo "    Warning: Failed to remove $file"
+              if [ -f "$file" ]; then
+                echo "$file"
               fi
-              ((FILES_TO_REMOVE++))
             fi
-          done < /tmp/linux_files.txt
+          done < /tmp/linux_files.txt > /tmp/linux_only_files.txt || true
 
-          # Commit removals if any
-          if [ "$FILES_TO_REMOVE" -gt 0 ]; then
-            echo "Committing $FILES_TO_REMOVE file deletions..."
-            git add -A
-            git commit -m "Remove $FILES_TO_REMOVE Linux-only files (kept overlapping files unchanged)" || true
+          # Remove Linux-only files (leave overlapping files unchanged)
+          if [ -s /tmp/linux_only_files.txt ]; then
+            while IFS= read -r file; do
+              echo "Removing Linux-only file: $file"
+              git rm "$file" 2>/dev/null || rm -f "$file"
+            done < /tmp/linux_only_files.txt
           else
             echo "No Linux-only files found; nothing to remove."
           fi
-
+          
+          # copy makefile.warn to src
+          cp "/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
+          
           # Cleanup temp lists
           rm -f /tmp/msft_files.txt /tmp/linux_files.txt /tmp/linux_only_files.txt || true
 
@@ -212,37 +172,17 @@ jobs:
           else
             echo "No deletions to commit"
           fi
-          echo "Disk usage for ${WORKDIR}/src after cleanup:"
 
-         
-          # Cleanup temp files
-          rm -f /tmp/msft_files.txt /tmp/linux_files.txt
-
-          # Remove msft clone to free space
+          # Remove msft clone to free space and garbage collect
           cd "${WORKDIR}"
           rm -rf msft_src || true
-
-          # Garbage collect
           cd "${WORKDIR}/src"
-          echo "Running garbage collection..."
-          git reflog expire --all --expire=now >/dev/null 2>&1 || true
-          git gc --prune=now >/dev/null 2>&1 || true
-        shell: bash
+          git reflog expire --all --expire=now || true
+          git gc --prune=now --aggressive || true
 
-      - name: Check Makefile.warn
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
-
-          # Check if MSFT has Makefile.warn
-          if [ -f "${WORKDIR}/src/scripts/Makefile.warn" ]; then
-            echo "MSFT Makefile.warn found, keeping it"
-          else
-            echo "MSFT Makefile.warn not found.try again"
-          fi
+          echo "Disk usage for ${WORKDIR}/src after cleanup:"
+          du -sh "${WORKDIR}/src" || true
         shell: bash
-        
 
       - name: Install build dependencies (self-hosted runner must permit sudo)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
@@ -275,7 +215,7 @@ jobs:
             sudo make install || true
           fi
         shell: bash
-        
+
       - name: Upload build artifacts
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         uses: actions/upload-artifact@v4
