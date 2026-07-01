@@ -138,7 +138,12 @@ jobs:
           git ls-tree -r --name-only HEAD | sort > /tmp/linux_files.txt || true
 
           #copy makefile.warn to tmp
+          echo "copy makefile.warn to tmp"
           cp "${WORKDIR}/src/scripts/Makefile.warn" /tmp/
+
+          #copy liveupdate to tmp
+          echo "copy liveupdate to tmp"
+          cp "${WORKDIR}/src/kernel/liveupdate"* /tmp/
           
           echo "Linux-only files to be removed (not present in MSFT):"
           while IFS= read -r file; do
@@ -161,10 +166,13 @@ jobs:
           
           # copy makefile.warn to src
           cp "/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
-          
-          # Cleanup temp lists
-          rm -f /tmp/msft_files.txt /tmp/linux_files.txt /tmp/linux_only_files.txt || true
 
+          #copy liveupdate to src
+          cp "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
+          
+          # Cleanup temp 
+          rm -rf /tmp
+          
           # Commit removals if any
           git add -A || true
           if ! git diff --cached --quiet; then
