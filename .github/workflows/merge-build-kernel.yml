@@ -167,8 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          make "${WORKDIR}/src/arch/x86/configs/config-wsl"
-          make KCONFIG_CONFIG="${WORKDIR}/src/arch/x86/configs/config-wsl"
+          make allyesconfig "${WORKDIR}/src/arch/x86/configs/config-wsl"
           make -j$(nproc)
 
             sudo make modules_install || true
