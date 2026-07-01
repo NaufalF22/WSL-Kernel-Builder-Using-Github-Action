@@ -199,11 +199,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
+          
+          # Use the WSL config file from arch/x86/configs
+          echo "Applying KCONFIG_CONFIG=arch/x86/configs/config-wsl"
+          make KCONFIG_CONFIG=arch/x86/configs/config-wsl
+          
           JOBS=$(nproc || echo 1)
-          if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
-            fakeroot make -j"${JOBS}" deb-pkg LOCALVERSION=-msft
-            ls -lh .. || true
-          else
             make -j"${JOBS}"
             sudo make modules_install || true
             sudo make install || true
