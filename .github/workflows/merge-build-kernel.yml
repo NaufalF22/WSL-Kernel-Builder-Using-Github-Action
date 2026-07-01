@@ -151,6 +151,19 @@ jobs:
           fi
         shell: bash
         
+      - name: Recheck Makefile on msft
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          # Check if MSFT has Makefile.warn
+          if [ -f "${WORKDIR}/msft_src/scripts/Makefile.warn" ]; then
+            echo "MSFT Makefile.warn found, keeping it"
+          else
+            echo "MSFT Makefile.warn not found"
+        shell: bash    
+        
       - name: Delete Linux-only files (keep overlapping files unchanged)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
