@@ -125,7 +125,7 @@ jobs:
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
           #copy microsoft folder
-          cp -r "${WORKDIR}/msft_src/Microsoft/"* ${WORKDIR}/src
+          cp -rf "${WORKDIR}/msft_src/Microsoft/"* ${WORKDIR}/src/ 2>/dev/null || true
         shell: bash
         
       - name: Delete MSFT folder
