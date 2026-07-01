@@ -126,19 +126,43 @@ jobs:
           fi
         shell: bash
         
+      - name: Verify Makefile.warn exists (from Linux kernel)
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+      
+          if [ -f "${WORKDIR}/msft_src/script/Makefile.warn" ]; then
+            echo "✓ Makefile.warn present from Linux kernel source"
+          else
+            echo "✗ Warning: Makefile.warn not found in kernel source"
+            exit 1
+          fi
+        shell: bash  
+        
       - name: Copy Makefile.warn from Linux 
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
 
-          # Copy Makefile.warn from Linux
-          if [ -d "${WORKDIR}/msft_src/script/Makefile.extrawarn" ]; then
-            echo "Copying arch/x86/configs/ from MSFT..."
-            git rm -r ${WORKDIR}/msft_src/script/Makefile.extrawarn 2>/dev/null 
-            cp -rf "${WORKDIR}/src/script/Makefile.warn"* ${WORKDIR}/msft_src/script/ 2>/dev/null || true
+          # Check if MSFT has Makefile.warn
+          if [ -f "${WORKDIR}/msft_src/script/Makefile.warn" ]; then
+            echo "MSFT Makefile.warn found, keeping it"
           else
-            echo "Warning: MSFT Makefile.extrawarn not found"
+            echo "MSFT Makefile.warn not found, copying from Linux kernel source..."
+            if [ -f "${WORKDIR}/src/script/Makefile.warn" ]; then
+              # Ensure script directory exists
+              mkdir -p script
+              cp "${WORKDIR}/src/script/Makefile.warn" script/
+              git add script/Makefile.warn || true
+              if ! git diff --cached --quiet; then
+                git commit -m "Add Makefile.warn from Linux kernel" || true
+              fi
+              echo "✓ Makefile.warn copied from Linux kernel"
+            else
+              echo "✗ Warning: Makefile.warn not found in either MSFT or Linux source"
+            fi
           fi
         shell: bash
         
