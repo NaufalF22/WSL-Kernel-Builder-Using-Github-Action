@@ -98,19 +98,6 @@ jobs:
               exit 2
             fi
           fi
-          # If the MSFT clone exists, rename Makefile.extrawarn to Makefile.warn (filesystem and commit where possible)
-          if [ -d "msft_src" ]; then
-            if [ -f "${WORKDIR}/msft_src/script/Makefile.extrawarn" ]; then
-              echo "Renaming msft_src/script/Makefile.extrawarn -> msft_src/script/Makefile.warn"
-              mv "${WORKDIR}/msft_src/script/Makefile.extrawarn" "${WORKDIR}/msft_src/script/Makefile.warn" || true
-              # Commit the rename in the msft clone if it's a git repo
-              if [ -d "msft_src/.git" ]; then
-                (cd msft_src && git add -A && git commit -m "Rename Makefile.extrawarn to Makefile.warn" || true)
-              fi
-            else
-              echo "msft_src/script/Makefile.extrawarn not found; nothing to rename"
-            fi
-          fi
         shell: bash
 
       - name: Copy arch/x86/configs/ from MSFT (prefer MSFT files)
@@ -138,6 +125,23 @@ jobs:
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
         shell: bash
+        
+      - name: Copy Makefile.warn from Linux 
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          # Copy Makefile.warn from Linux
+          if [ -d "${WORKDIR}/msft_src/script/Makefile.extrawarn" ]; then
+            echo "Copying arch/x86/configs/ from MSFT..."
+            git rm -r ${WORKDIR}/msft_src/script/Makefile.extrawarn 2>/dev/null 
+            cp -rf "${WORKDIR}/src/script/Makefile.warn"* ${WORKDIR}/msft_src/script/ 2>/dev/null || true
+          else
+            echo "Warning: MSFT Makefile.extrawarn not found"
+          fi
+        shell: bash
+        
       - name: Delete Linux-only files (keep overlapping files unchanged)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
