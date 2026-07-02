@@ -45,7 +45,7 @@ jobs:
 
           # Normalize kernel_ref and derive tarball name when needed
             echo "Cloning kernel.org stable repo (shallow)..."
-            git clone --depth=1 --branch "{{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src || 
+            git clone --depth=1 --branch "${{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src || 
             cd src
         shell: bash
 
