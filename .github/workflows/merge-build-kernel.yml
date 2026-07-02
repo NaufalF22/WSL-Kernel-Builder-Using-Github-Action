@@ -7,6 +7,10 @@ on:
         description: 'MSFT branch to fetch'
         required: false
         default: 'linux-msft-wsl-6.18.y'
+      linux_branch:
+        description: 'Linux branch to fetch'
+        required: false
+        default: linux-rolling-stable
       build_deb:
         description: 'Produce Debian packages'
         required: false
@@ -17,7 +21,7 @@ jobs:
     runs-on: [ubuntu-latest]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
-      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=linux-rolling-stable
+      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
       WORKDIR: ${{ github.workspace }}/kernel-work
 
     steps:
@@ -41,7 +45,7 @@ jobs:
 
           # Normalize kernel_ref and derive tarball name when needed
             echo "Cloning kernel.org stable repo (shallow)..."
-            git clone --depth=1 "${KERNEL_GIT}" src || 
+            git clone --depth=1 --branch "{{ github.event.inputs.linux_branch}}" "${KERNEL_GIT}" src || 
             cd src
         shell: bash
 
