@@ -18,7 +18,7 @@ on:
 
 jobs:
   merge-build:
-    runs-on: [ubuntu-latest]
+    runs-on: [ubuntu-slim]
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
@@ -37,6 +37,9 @@ jobs:
         run: |
           rm -rf "${WORKDIR}"
           mkdir -p "${WORKDIR}"
+          echo "Disk usage:"
+          df -h || true
+          du -sh . || true
 
       - name: Fetch kernel source 
         run: |
