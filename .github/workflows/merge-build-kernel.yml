@@ -38,7 +38,7 @@ jobs:
           rm -rf "${WORKDIR}"
           mkdir -p "${WORKDIR}"
 
-      - name: Fetch kernel source (git or tarball)
+      - name: Fetch kernel source 
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
@@ -146,17 +146,21 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ -f "arch/x86/configs/config-wsl" ]; 
-          then echo "Using MSFT config-wsl as .config" 
-          cp arch/x86/configs/config-wsl .config 
-          # Ensure .config is valid for this 
-          tree yes "" | make olddefconfig 
-          else echo "config-wsl not found, falling back to defconfig" 
-          make -j$(nproc)
-
+          if [ -f "arch/x86/configs/config-wsl" ]; then
+            echo "Using MSFT config-wsl as .config" 
+            cp arch/x86/configs/config-wsl .config 
+            # Ensure .config is valid for this kernel
+            yes "" | make olddefconfig 
+            make -j$(nproc)
             sudo make modules_install || true
             sudo make install || true
-          
+          else
+            echo "config-wsl not found, falling back to defconfig" 
+            make defconfig
+            make -j$(nproc)
+            sudo make modules_install || true
+            sudo make install || true
+          fi
         shell: bash
 
       - name: Upload build artifacts
