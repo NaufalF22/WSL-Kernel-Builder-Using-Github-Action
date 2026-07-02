@@ -124,7 +124,8 @@ jobs:
           git gc --prune=now --aggressive || true
 
           echo "Disk usage for ${WORKDIR}/src after cleanup:"
-          du -sh "${WORKDIR}/src" || true
+          df -h || true
+          du -sh . || true
         shell: bash
 
       - name: Install build dependencies (self-hosted runner must permit sudo)
@@ -151,65 +152,15 @@ jobs:
           fi
 
           # Build
-          make -j$(nproc)
+          make -j$(nproc) clean
 
-          # Safe modules install and pruning flow to free space before any system install
-          OUT="${WORKDIR}/modules_out"
-          mkdir -p "$OUT"
-
-          echo "Installing modules selected by .config into $OUT (INSTALL_MOD_PATH)..."
-          # Install only the modules enabled by .config into a local OUT folder
-          if ! make modules_install INSTALL_MOD_PATH="$OUT"; then
-            echo "make modules_install failed; continuing cautiously"
-          fi
-
-          # Build a list of installed module basenames (what the .config selected)
-          installed_list="$OUT/installed_ko_list.txt"
-          if [ -d "$OUT" ]; then
-            find "$OUT" -type f -name '*.ko' -printf '%f\n' | sort -u > "$installed_list" || true
-          else
-            touch "$installed_list"
-          fi
-
-          echo "Installed modules count: $(wc -l < "$installed_list" 2>/dev/null || echo 0)"
-
-          # Guard: avoid deleting anything if installed_list is empty
-          if [ ! -s "$installed_list" ]; then
-            echo "installed_list is empty. Skipping auto-deletion to avoid removing all built modules"
-            echo "Show top largest modules to help manual pruning:"
-            find . -type f -name '*.ko' -exec du -h {} + | sort -h | tail -n 40 || true
-          else
-            # Find all built .ko in the source tree (relative paths)
-            all_ko_list="$(mktemp)"
-            find . -type f -name '*.ko' -printf '%P\n' | sort -u > "$all_ko_list" || true
-
-            echo "Pruning .ko files that are not present in installed modules list..."
-            removed_count=0
-            while IFS= read -r ko_rel; do
-              ko_basename="$(basename "$ko_rel")"
-              if ! grep -Fxq "$ko_basename" "$installed_list"; then
-                if [ -f "$ko_rel" ]; then
-                  echo "Deleting $ko_rel (not in installed list)"
-                  rm -fv "$ko_rel" || true
-                  removed_count=$((removed_count+1))
-                fi
-              fi
-            done < "$all_ko_list"
-
-            echo "Removed $removed_count unneeded .ko files from source tree."
-          fi
+          # 
+          find /lib/modules/5.16.5/ -name *.ko -exec strip --strip-unneeded {} +
 
           echo "Disk usage AFTER pruning:"
           df -h || true
           du -sh . || true
 
-          # Optionally proceed to install kernel image (this may touch system / and require space)
-          # keep it non-failing to avoid blocking CI if it runs out of space
-          if sudo make install; then
-            echo "make install succeeded"
-          else
-            echo "make install failed or skipped (non-fatal)"
-          fi
         shell: bash
 
       - name: Upload build artifacts
