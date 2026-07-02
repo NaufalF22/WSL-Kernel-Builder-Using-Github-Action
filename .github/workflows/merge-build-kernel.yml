@@ -132,15 +132,6 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
         shell: bash
 
-      #- name: Configure kernel with all features enabled
-        #if: steps.fetch_msft.outputs.msft_failed == 'false'
-        #run: |
-          #set -euo pipefail
-          #cd "${WORKDIR}/src"
-          #echo "Generating kernel config with all features enabled (allyesconfig)..."
-          #make allyesconfig
-        #shell: bash
-
       - name: Build kernel (and optionally debs)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
@@ -151,15 +142,70 @@ jobs:
             cp arch/x86/configs/config-wsl .config 
             # Ensure .config is valid for this kernel
             make olddefconfig < /dev/null || true
-            make -j$(nproc)
-            sudo make modules_install || true
-            sudo make install || true
           else
             echo "config-wsl not found, falling back to defconfig" 
             make defconfig
-            make -j$(nproc)
-            sudo make modules_install || true
-            sudo make install || true
+          fi
+
+          # Build
+          make -j$(nproc)
+
+          # Safe modules install and pruning flow to free space before any system install
+          OUT="${WORKDIR}/modules_out"
+          mkdir -p "$OUT"
+
+          echo "Installing modules selected by .config into $OUT (INSTALL_MOD_PATH)..."
+          # Install only the modules enabled by .config into a local OUT folder
+          if ! make modules_install INSTALL_MOD_PATH="$OUT"; then
+            echo "make modules_install failed; continuing cautiously"
+          fi
+
+          # Build a list of installed module basenames (what the .config selected)
+          installed_list="$OUT/installed_ko_list.txt"
+          if [ -d "$OUT" ]; then
+            find "$OUT" -type f -name '*.ko' -printf '%f\n' | sort -u > "$installed_list" || true
+          else
+            touch "$installed_list"
+          fi
+
+          echo "Installed modules count: $(wc -l < "$installed_list" 2>/dev/null || echo 0)"
+
+          # Guard: avoid deleting anything if installed_list is empty
+          if [ ! -s "$installed_list" ]; then
+            echo "installed_list is empty. Skipping auto-deletion to avoid removing all built modules"
+            echo "Show top largest modules to help manual pruning:"
+            find . -type f -name '*.ko' -exec du -h {} + | sort -h | tail -n 40 || true
+          else
+            # Find all built .ko in the source tree (relative paths)
+            all_ko_list="$(mktemp)"
+            find . -type f -name '*.ko' -printf '%P\n' | sort -u > "$all_ko_list" || true
+
+            echo "Pruning .ko files that are not present in installed modules list..."
+            removed_count=0
+            while IFS= read -r ko_rel; do
+              ko_basename="$(basename "$ko_rel")"
+              if ! grep -Fxq "$ko_basename" "$installed_list"; then
+                if [ -f "$ko_rel" ]; then
+                  echo "Deleting $ko_rel (not in installed list)"
+                  rm -fv "$ko_rel" || true
+                  removed_count=$((removed_count+1))
+                fi
+              fi
+            done < "$all_ko_list"
+
+            echo "Removed $removed_count unneeded .ko files from source tree."
+          fi
+
+          echo "Disk usage AFTER pruning:"
+          df -h || true
+          du -sh . || true
+
+          # Optionally proceed to install kernel image (this may touch system / and require space)
+          # keep it non-failing to avoid blocking CI if it runs out of space
+          if sudo make install; then
+            echo "make install succeeded"
+          else
+            echo "make install failed or skipped (non-fatal)"
           fi
         shell: bash
 
@@ -173,3 +219,4 @@ jobs:
             ${WORKDIR}/src/*.deb
             ${WORKDIR}/src/../*.deb
             ${WORKDIR}/src/*.tar.gz
+            ${WORKDIR}/modules_out
