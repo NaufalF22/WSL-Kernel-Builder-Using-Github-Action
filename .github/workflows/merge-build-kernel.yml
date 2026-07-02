@@ -177,7 +177,7 @@ jobs:
 
             sudo make modules_install || true
             sudo make install || true
-          fi
+          
         shell: bash
 
       - name: Upload build artifacts
