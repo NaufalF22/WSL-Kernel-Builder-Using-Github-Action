@@ -167,7 +167,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          make allyesconfig "${WORKDIR}/src/arch/x86/configs/config-wsl"
+          if [ -f "arch/x86/configs/config-wsl" ]; 
+          then echo "Using MSFT config-wsl as .config" 
+          cp arch/x86/configs/config-wsl .config 
+          # Ensure .config is valid for this 
+          tree yes "" | make olddefconfig 
+          else echo "config-wsl not found, falling back to defconfig" 
           make -j$(nproc)
 
             sudo make modules_install || true
