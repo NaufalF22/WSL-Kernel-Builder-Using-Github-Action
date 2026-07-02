@@ -150,7 +150,7 @@ jobs:
             echo "Using MSFT config-wsl as .config" 
             cp arch/x86/configs/config-wsl .config 
             # Ensure .config is valid for this kernel
-            yes "" | make olddefconfig 
+            make olddefconfig < /dev/null || true
             make -j$(nproc)
             sudo make modules_install || true
             sudo make install || true
