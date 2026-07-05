@@ -108,6 +108,7 @@ jobs:
           fi
           #copy microsoft folder
           cp -rf "${WORKDIR}/msft_src/Microsoft/"* ${WORKDIR}/src/ 2>/dev/null || true
+          mv "${WORKDIR}/msft_src/scripts/Makefile.extrawarn" "${WORKDIR}/msft_src/scripts/Makefile.warn" || true
         shell: bash
         
       - name: Delete MSFT folder
