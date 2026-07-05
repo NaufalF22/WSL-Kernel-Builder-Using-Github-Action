@@ -118,7 +118,7 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
 
-          #copy liveupdate to tmp
+          #copy liveupdate to msft
           echo "copy liveupdate to msft"
           mkdir ${WORKDIR}/msft_src/kernel/liveupdate
           cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/msft_src/kernel/liveupdate"
