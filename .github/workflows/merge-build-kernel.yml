@@ -147,7 +147,7 @@ jobs:
          
 
           #copy liveupdate to src
-          cp -rf "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
+          cp -rf /tmp/liveupdate* ${WORKDIR}/src/kernel/
           
           # Cleanup temp 
           rm -rf /tmp
