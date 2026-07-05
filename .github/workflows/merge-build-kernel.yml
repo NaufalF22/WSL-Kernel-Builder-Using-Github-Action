@@ -132,12 +132,12 @@ jobs:
           
           echo "Linux-only files to be removed (not present in MSFT):"
           while IFS= read -r file; do
-            if ! grep -qFx "$file" ${WORKDIR}/tmp/msft_files.txt; then
+            if ! grep -qFx "$file" /tmp/msft_files.txt; then
               if [ -f "$file" ]; then
                 echo "$file"
-            done < ${WORKDIR}/tmp/linux_files.txt > ${WORKDIR}/tmp/linux_only_files.txt || true
               fi
             fi
+          done < /tmp/linux_files.txt > /tmp/linux_only_files.txt || true
 
           # Remove Linux-only files (leave overlapping files unchanged)
           if [ -s /tmp/linux_only_files.txt ]; then
