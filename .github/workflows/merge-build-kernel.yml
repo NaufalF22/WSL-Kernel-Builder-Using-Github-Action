@@ -144,9 +144,7 @@ jobs:
           else
             echo "No Linux-only files found; nothing to remove."
           fi
-          
-          # copy makefile.warn to src
-          cp "/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
+         
 
           #copy liveupdate to src
           cp -rf "/tmp/kernel/liveupdate"*  ${WORKDIR}/src/kernel
@@ -162,9 +160,6 @@ jobs:
             echo "No deletions to commit"
           fi
 
-          # Remove msft clone to free space and garbage collect
-          cd "${WORKDIR}"
-          rm -rf msft_src || true
           
       - name: Delete MSFT folder
         if: steps.fetch_msft.outputs.msft_failed == 'false'
@@ -192,6 +187,13 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
         shell: bash
 
+      - name: Check disk usage before build kernel
+        run: |
+          echo "Disk usage:"
+          df -h || true
+          du -sh . || true
+        shell: bash
+         
       - name: Build kernel (and optionally debs)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
