@@ -122,7 +122,7 @@ jobs:
           echo "copy liveupdate to msft"
           mkdir -p ${WORKDIR}/tmp/kernel/liveupdate
           cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/tmp/kernel/liveupdate"
-          cp -rf "${WORKDIR}/src/kernel/Makefile.warn" "${WORKDIR}/tmp"
+          cp -rf "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/tmp"
           
           echo "Listing files in msft_src..."
           mkdir ${WORKDIR}/tmp
@@ -152,7 +152,7 @@ jobs:
           #copy the makefile.warn and live update
           mkdir -p "${WORKDIR}/src/kernel/liveupdate"
           cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
-          cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/kernel/
+          cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
           
           # Cleanup temp 
           rm -rf "${WORKDIR}/tmp"
