@@ -152,9 +152,10 @@ jobs:
           #copy the makefile.warn and live update
           mkdir "${WORKDIR}/src/kernel/liveupdate"
           cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
-          cp -rf "${WORKDIR}/tmp"
+          cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/kernel/
+          
           # Cleanup temp 
-          rm -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/kernel/Makefile.warn
+          rm -rf "${WORKDIR}/tmp
           
           # Commit removals if any
           git add -A || true
