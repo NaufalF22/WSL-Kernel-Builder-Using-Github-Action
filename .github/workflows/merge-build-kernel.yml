@@ -125,7 +125,6 @@ jobs:
           cp -rf "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/tmp"
           
           echo "Listing files in msft_src..."
-          mkdir ${WORKDIR}/tmp
           (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > ${WORKDIR}/tmp/msft_files.txt || true
           echo "Listing files in linux src..."
           git ls-tree -r --name-only HEAD | sort > ${WORKDIR}/tmp/linux_files.txt || true
