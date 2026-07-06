@@ -120,8 +120,9 @@ jobs:
 
           #copy liveupdate to msft
           echo "copy liveupdate to msft"
-          mkdir ${WORKDIR}/msft_src/kernel/liveupdate
-          cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/msft_src/kernel/liveupdate"
+          mkdir ${WORKDIR}/tmp/kernel/liveupdate
+          cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/tmp/kernel/liveupdate"
+          cp -rf "${WORKDIR}/src/kernel/Makefile.warn" "${WORKDIR}/tmp"
           
           echo "Listing files in msft_src..."
           mkdir ${WORKDIR}/tmp
@@ -148,9 +149,12 @@ jobs:
           else
             echo "No Linux-only files found; nothing to remove."
           fi
-         
+          #copy the makefile.warn and live update
+          mkdir "${WORKDIR}/src/kernel/liveupdate"
+          cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
+          cp -rf "${WORKDIR}/tmp"
           # Cleanup temp 
-          rm -rf ${WORKDIR}/tmp
+          rm -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/kernel/Makefile.warn
           
           # Commit removals if any
           git add -A || true
@@ -160,6 +164,7 @@ jobs:
             echo "No deletions to commit"
           fi
 
+          
           
       - name: Delete MSFT folder
         if: steps.fetch_msft.outputs.msft_failed == 'false'
