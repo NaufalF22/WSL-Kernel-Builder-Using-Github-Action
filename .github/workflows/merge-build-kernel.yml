@@ -213,9 +213,6 @@ jobs:
           # Build
           make -j$(nproc) clean
 
-          # 
-          find /lib/modules/5.16.5/ -name *.ko -exec strip --strip-unneeded {} +
-
           echo "Disk usage AFTER pruning:"
           df -h || true
           du -sh . || true
