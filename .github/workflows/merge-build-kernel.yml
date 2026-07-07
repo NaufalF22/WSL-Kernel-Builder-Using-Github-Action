@@ -217,6 +217,7 @@ jobs:
           df -h || true
           du -sh . || true
 
+           find ${WORKDIR} -name *.tar.gz
         shell: bash
 
       - name: Upload build artifacts
