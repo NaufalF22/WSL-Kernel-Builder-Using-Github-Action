@@ -107,64 +107,60 @@ jobs:
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
           
-          #copy microsoft folder
-          cp -rf "${WORKDIR}/msft_src/Microsoft/"* ${WORKDIR}/src/ 2>/dev/null || true
-          mv "${WORKDIR}/msft_src/scripts/Makefile.extrawarn" "${WORKDIR}/msft_src/scripts/Makefile.warn" || true
         shell: bash
 
-      - name: Delete Linux-only files (keep overlapping files unchanged)
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          cd "${WORKDIR}/src"
+      # - name: Delete Linux-only files (keep overlapping files unchanged)
+      #   if: steps.fetch_msft.outputs.msft_failed == 'false'
+      #   run: |
+      #     set -euo pipefail
+      #     cd "${WORKDIR}/src"
 
-          #copy liveupdate to msft
-          echo "copy liveupdate to msft"
-          mkdir -p ${WORKDIR}/tmp/kernel/liveupdate
-          cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/tmp/kernel/liveupdate"
-          cp -rf "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/tmp"
+      #     #copy liveupdate to msft
+      #     echo "copy liveupdate to msft"
+      #     mkdir -p ${WORKDIR}/tmp/kernel/liveupdate
+      #     cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/tmp/kernel/liveupdate"
+      #     cp -rf "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/tmp"
           
-          echo "Listing files in msft_src..."
-          (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > ${WORKDIR}/tmp/msft_files.txt || true
-          echo "Listing files in linux src..."
-          git ls-tree -r --name-only HEAD | sort > ${WORKDIR}/tmp/linux_files.txt || true
-
-          
-          echo "Linux-only files to be removed (not present in MSFT):"
-          while IFS= read -r file; do
-            if ! grep -qFx "$file" ${WORKDIR}/tmp/msft_files.txt; then
-              if [ -f "$file" ]; then
-                echo "$file"
-              fi
-            fi
-          done < ${WORKDIR}/tmp/linux_files.txt > ${WORKDIR}/tmp/linux_only_files.txt || true
-
-          # Remove Linux-only files (leave overlapping files unchanged)
-          if [ -s ${WORKDIR}/tmp/linux_only_files.txt ]; then
-            while IFS= read -r file; do
-              echo "Removing Linux-only file: $file"
-              git rm "$file" 2>/dev/null || rm -f "$file"
-            done < ${WORKDIR}/tmp/linux_only_files.txt
-          else
-            echo "No Linux-only files found; nothing to remove."
-          fi
-          #copy the makefile.warn and live update
-          mkdir -p "${WORKDIR}/src/kernel/liveupdate"
-          cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
-          cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
-          
-          # Cleanup temp 
-          rm -rf "${WORKDIR}/tmp"
-          
-          # Commit removals if any
-          git add -A || true
-          if ! git diff --cached --quiet; then
-            git commit -m "Remove files not present in MSFT branch (kept overlapping files unchanged)" || true
-          else
-            echo "No deletions to commit"
-          fi
+      #     echo "Listing files in msft_src..."
+      #     (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > ${WORKDIR}/tmp/msft_files.txt || true
+      #     echo "Listing files in linux src..."
+      #     git ls-tree -r --name-only HEAD | sort > ${WORKDIR}/tmp/linux_files.txt || true
 
           
+      #     echo "Linux-only files to be removed (not present in MSFT):"
+      #     while IFS= read -r file; do
+      #       if ! grep -qFx "$file" ${WORKDIR}/tmp/msft_files.txt; then
+      #         if [ -f "$file" ]; then
+      #           echo "$file"
+      #         fi
+      #       fi
+      #     done < ${WORKDIR}/tmp/linux_files.txt > ${WORKDIR}/tmp/linux_only_files.txt || true
+
+      #     # Remove Linux-only files (leave overlapping files unchanged)
+      #     if [ -s ${WORKDIR}/tmp/linux_only_files.txt ]; then
+      #       while IFS= read -r file; do
+      #         echo "Removing Linux-only file: $file"
+      #         git rm "$file" 2>/dev/null || rm -f "$file"
+      #       done < ${WORKDIR}/tmp/linux_only_files.txt
+      #     else
+      #       echo "No Linux-only files found; nothing to remove."
+      #     fi
+      #     #copy the makefile.warn and live update
+      #     mkdir -p "${WORKDIR}/src/kernel/liveupdate"
+      #     cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
+      #     cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
+          
+      #     # Cleanup temp 
+      #     rm -rf "${WORKDIR}/tmp"
+          
+      #     # Commit removals if any
+      #     git add -A || true
+      #     if ! git diff --cached --quiet; then
+      #       git commit -m "Remove files not present in MSFT branch (kept overlapping files unchanged)" || true
+      #     else
+      #       echo "No deletions to commit"
+      #     fi
+                  # shell: bash
           
       - name: Delete MSFT folder
         if: steps.fetch_msft.outputs.msft_failed == 'false'
