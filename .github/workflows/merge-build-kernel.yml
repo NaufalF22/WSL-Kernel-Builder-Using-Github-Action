@@ -216,8 +216,9 @@ jobs:
           echo "Disk usage AFTER pruning:"
           df -h || true
           du -sh . || true
-
-           find ${WORKDIR} -name *.tar.gz
+          #kernel path
+          ${KERNEL}: find ${WORKDIR} -name *.tar.gz
+           
         shell: bash
 
       - name: Upload build artifacts
@@ -226,9 +227,4 @@ jobs:
         with:
           name: kernel-build-artifacts
           path: |
-            ${WORKDIR}/src/arch/*/boot/*
-            ${WORKDIR}/src/*.tar.gz
-            ${WORKDIR}/modules_out
-        #   ${WORKDIR}/src/*.deb
-        #   ${WORKDIR}/src/../*.deb
-
+            ${KERNEL}
