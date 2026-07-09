@@ -176,7 +176,18 @@ jobs:
           cd "${WORKDIR}"
 
           # Find artifacts produced by the build
-          artifacts=$(find "${WORKDIR}" -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name 'bzImage' -o -name 'vmlinuz' -o -name 'vmlinux' \) -print || true)
+          artifacts=$(find "${WORKDIR}" -type f \( \
+          -name "vmlinux" \
+          -o -name "bzImage" \
+          -o -name "Image" \
+          -o -name "zImage" \
+          -o -name "uImage" \
+          -o -name "vmlinuz*" \
+          -o -name "-microsoft-standard-WSL2" \
+          -o -name "*.deb" \
+          -o -name "*.rpm" \
+          -o -name "*.tar.gz" \
+          \) -print || true)
 
           if [ -z "${artifacts}" ]; then
             echo "No kernel artifacts found."
