@@ -109,59 +109,6 @@ jobs:
           
         shell: bash
 
-      # - name: Delete Linux-only files (keep overlapping files unchanged)
-      #   if: steps.fetch_msft.outputs.msft_failed == 'false'
-      #   run: |
-      #     set -euo pipefail
-      #     cd "${WORKDIR}/src"
-
-      #     #copy liveupdate to msft
-      #     echo "copy liveupdate to msft"
-      #     mkdir -p ${WORKDIR}/tmp/kernel/liveupdate
-      #     cp -rf "${WORKDIR}/src/kernel/liveupdate"* "${WORKDIR}/tmp/kernel/liveupdate"
-      #     cp -rf "${WORKDIR}/src/scripts/Makefile.warn" "${WORKDIR}/tmp"
-          
-      #     echo "Listing files in msft_src..."
-      #     (cd "${WORKDIR}/msft_src" && git ls-tree -r --name-only HEAD | sort) > ${WORKDIR}/tmp/msft_files.txt || true
-      #     echo "Listing files in linux src..."
-      #     git ls-tree -r --name-only HEAD | sort > ${WORKDIR}/tmp/linux_files.txt || true
-
-          
-      #     echo "Linux-only files to be removed (not present in MSFT):"
-      #     while IFS= read -r file; do
-      #       if ! grep -qFx "$file" ${WORKDIR}/tmp/msft_files.txt; then
-      #         if [ -f "$file" ]; then
-      #           echo "$file"
-      #         fi
-      #       fi
-      #     done < ${WORKDIR}/tmp/linux_files.txt > ${WORKDIR}/tmp/linux_only_files.txt || true
-
-      #     # Remove Linux-only files (leave overlapping files unchanged)
-      #     if [ -s ${WORKDIR}/tmp/linux_only_files.txt ]; then
-      #       while IFS= read -r file; do
-      #         echo "Removing Linux-only file: $file"
-      #         git rm "$file" 2>/dev/null || rm -f "$file"
-      #       done < ${WORKDIR}/tmp/linux_only_files.txt
-      #     else
-      #       echo "No Linux-only files found; nothing to remove."
-      #     fi
-      #     #copy the makefile.warn and live update
-      #     mkdir -p "${WORKDIR}/src/kernel/liveupdate"
-      #     cp -rf "${WORKDIR}/tmp/kernel/liveupdate"* "${WORKDIR}/src/kernel/liveupdate"
-      #     cp -rf "${WORKDIR}/tmp/Makefile.warn" ${WORKDIR}/src/scripts/
-          
-      #     # Cleanup temp 
-      #     rm -rf "${WORKDIR}/tmp"
-          
-      #     # Commit removals if any
-      #     git add -A || true
-      #     if ! git diff --cached --quiet; then
-      #       git commit -m "Remove files not present in MSFT branch (kept overlapping files unchanged)" || true
-      #     else
-      #       echo "No deletions to commit"
-      #     fi
-                  # shell: bash
-          
       - name: Delete MSFT folder
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
@@ -216,15 +163,36 @@ jobs:
           echo "Disk usage AFTER pruning:"
           df -h || true
           du -sh . || true
-          #kernel path
-          ${KERNEL}: find ${WORKDIR} -name *.tar.gz
+          echo "Looking for artifacts..."
+          find "${WORKDIR}" -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name 'bzImage' -o -name 'vmlinuz' -o -name 'vmlinux' \) -print || true
            
         shell: bash
 
-      - name: Upload build artifacts
+      - name: Collect kernel artifacts
         if: steps.fetch_msft.outputs.msft_failed == 'false'
+        id: collect_artifacts
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+
+          # Find artifacts produced by the build
+          artifacts=$(find "${WORKDIR}" -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name 'bzImage' -o -name 'vmlinuz' -o -name 'vmlinux' \) -print || true)
+
+          if [ -z "${artifacts}" ]; then
+            echo "No kernel artifacts found."
+            # Emit an empty output
+            echo "artifacts=" >> "$GITHUB_OUTPUT"
+          else
+            # Emit a multi-line output using the EOF delimiter syntax
+            echo "artifacts<<EOF" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "${artifacts}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Upload build artifacts
+        if: steps.fetch_msft.outputs.msft_failed == 'false' && steps.collect_artifacts.outputs.artifacts != ''
         uses: actions/upload-artifact@v4
         with:
           name: kernel-build-artifacts
-          path: |
-            ${KERNEL}
+          path: ${{ steps.collect_artifacts.outputs.artifacts }}
