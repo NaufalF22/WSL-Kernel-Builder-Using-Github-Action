@@ -170,7 +170,7 @@ jobs:
         run: |
             set -euo pipefail
             echo "Looking for artifacts..."
-            find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img"\) -print || true)
+            find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img" \) -print || true
         shell: bash
 
       - name: Collect kernel artifacts
@@ -181,7 +181,7 @@ jobs:
           cd "${WORKDIR}"
 
           # Find artifacts produced by the build
-          artifacts=$(find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img"\) -print || true)
+          artifacts=$(find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img" \) -print || true)
 
           if [ -z "${artifacts}" ]; then
             echo "No kernel artifacts found."
