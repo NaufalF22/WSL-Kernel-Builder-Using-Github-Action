@@ -41,19 +41,27 @@ jobs:
           df -h || true
           du -sh . || true
 
-      - name: Fetch kernel source 
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
+        shell: bash
+
+      - name: Fetch kernel source
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
-
-          # Normalize kernel_ref and derive tarball name when needed
-            echo "Cloning kernel.org stable repo (shallow)..."
-            git clone --depth=1 --branch "${{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src || 
-            cd src
+          echo "Cloning kernel.org stable repo (shallow)..."
+          git clone --depth=1 --branch "${{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src
+          cd src
+          echo "Checked out $(git rev-parse --short HEAD) on ${{ github.event.inputs.linux_branch }}"
         shell: bash
 
       - id: fetch_msft
         name: Clone MSFT into separate folder
+        # Config source only - don't fail the whole build if this can't be fetched.
+        continue-on-error: true
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
@@ -72,12 +80,12 @@ jobs:
               else
                 echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}" >&2
                 echo "msft_failed=true" >> "$GITHUB_OUTPUT"
-                exit 2
+                exit 1
               fi
             else
               echo "Failed to clone MSFT repo" >&2
               echo "msft_failed=true" >> "$GITHUB_OUTPUT"
-              exit 2
+              exit 1
             fi
           fi
         shell: bash
@@ -101,23 +109,18 @@ jobs:
             cp -rf "${WORKDIR}/msft_src/arch/x86/configs/"* arch/x86/configs/ 2>/dev/null || true
             git add arch/x86/configs/ || true
             if ! git diff --cached --quiet; then
-            git commit -m "Replace arch/x86/configs with MSFT version" || true
+              git commit -m "Replace arch/x86/configs with MSFT version" || true
             fi
           else
             echo "Warning: MSFT arch/x86/configs/ not found"
           fi
-          
         shell: bash
 
       - name: Delete MSFT folder
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        if: always()
         run: |
           set -euo pipefail
-          cd "${WORKDIR}/src"
-
-          # Remove msft clone to free space and garbage collect
-          cd "${WORKDIR}"
-          rm -rf msft_src || true
+          rm -rf "${WORKDIR}/msft_src" || true
           cd "${WORKDIR}/src"
           git reflog expire --all --expire=now || true
           git gc --prune=now --aggressive || true
@@ -126,14 +129,6 @@ jobs:
           df -h || true
           du -sh . || true
         shell: bash
-        
-      - name: Install build dependencies (self-hosted runner must permit sudo)
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
-        shell: bash
 
       - name: Check disk usage before build kernel
         run: |
@@ -141,54 +136,82 @@ jobs:
           df -h || true
           du -sh . || true
         shell: bash
-         
-      - name: Build kernel (and optionally debs)
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
+
+      - name: Configure kernel
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
           if [ -f "arch/x86/configs/config-wsl" ]; then
-            echo "Using MSFT config-wsl as .config" 
-            cp arch/x86/configs/config-wsl .config 
-            # Ensure .config is valid for this kernel
-            make olddefconfig < /dev/null || true
+            echo "Using MSFT config-wsl as .config"
+            cp arch/x86/configs/config-wsl .config
+            # Ensure .config is valid for this kernel version
+            make olddefconfig
           else
-            echo "config-wsl not found, falling back to defconfig" 
+            echo "config-wsl not found, falling back to defconfig"
             make defconfig
           fi
+        shell: bash
 
-          # Build
-          make -j$(nproc) clean
+      - name: Build kernel
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
+            echo "Building bzImage, modules, and Debian packages..."
+            make -j"$(nproc)" bzImage modules
+            make -j"$(nproc)" bindeb-pkg
+          else
+            echo "Building bzImage and modules..."
+            make -j"$(nproc)" bzImage modules
+          fi
 
-          echo "Disk usage AFTER pruning:"
+          echo "Disk usage after build:"
           df -h || true
           du -sh . || true
         shell: bash
 
-      - name: Find the artifacts 
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
+      - name: Locate compiled kernel
         run: |
-            set -euo pipefail
-            echo "Looking for artifacts..."
-            find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img" \) -print || true
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          echo "=== Known kernel output locations ==="
+          for f in arch/x86/boot/bzImage vmlinux System.map .config; do
+            if [ -f "$f" ]; then
+              echo "FOUND: ${WORKDIR}/src/${f} ($(du -h "$f" | cut -f1))"
+            else
+              echo "MISSING: ${WORKDIR}/src/${f}"
+            fi
+          done
+
+          echo ""
+          echo "=== Debian packages (built one level above src, if build_deb=true) ==="
+          find "${WORKDIR}" -maxdepth 1 -name "*.deb" -print || true
+
+          echo ""
+          echo "=== Kernel release version ==="
+          make -s kernelrelease || true
+        shell: bash
+
+      - name: Find the artifacts
+        run: |
+          set -euo pipefail
+          echo "Looking for artifacts..."
+          find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*.deb" -o -name "*.tar.gz" \) -print || true
         shell: bash
 
       - name: Collect kernel artifacts
-        if: steps.fetch_msft.outputs.msft_failed == 'false'
         id: collect_artifacts
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
 
-          # Find artifacts produced by the build
-          artifacts=$(find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "initramfs" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*-microsoft-standard-WSL2" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.img" \) -print || true)
+          artifacts=$(find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*.deb" -o -name "*.tar.gz" \) -print || true)
 
           if [ -z "${artifacts}" ]; then
             echo "No kernel artifacts found."
-            # Emit an empty output
             echo "artifacts=" >> "$GITHUB_OUTPUT"
           else
-            # Emit a multi-line output using the EOF delimiter syntax
             echo "artifacts<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s\n' "${artifacts}" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
@@ -196,7 +219,7 @@ jobs:
         shell: bash
 
       - name: Upload build artifacts
-        if: steps.fetch_msft.outputs.msft_failed == 'false' && steps.collect_artifacts.outputs.artifacts != ''
+        if: steps.collect_artifacts.outputs.artifacts != ''
         uses: actions/upload-artifact@v4
         with:
           name: kernel-build-artifacts
