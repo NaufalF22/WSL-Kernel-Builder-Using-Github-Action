@@ -19,6 +19,8 @@ on:
 jobs:
   merge-build:
     runs-on: [ubuntu-latest]
+    permissions:
+      contents: write
     env:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
@@ -199,7 +201,8 @@ jobs:
           du -sh . || true
         shell: bash
 
-      - name: Locate compiled kernel
+      - id: locate_kernel
+        name: Locate compiled kernel
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
@@ -219,23 +222,52 @@ jobs:
 
           echo ""
           echo "=== Kernel release version ==="
-          make -s kernelrelease || true
+          kernelrelease="$(make -s kernelrelease)"
+          echo "${kernelrelease}"
+          echo "kernelrelease=${kernelrelease}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Stage release artifacts
+        id: stage_artifacts
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          KREL="${{ steps.locate_kernel.outputs.kernelrelease }}"
+
+          mkdir -p "${WORKDIR}/release-artifacts"
+
+          if [ -f "arch/x86/boot/bzImage" ]; then
+            cp "arch/x86/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}"
+          fi
+          if [ -f "vmlinux" ]; then
+            cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}"
+          fi
+          if [ -f "System.map" ]; then
+            cp "System.map" "${WORKDIR}/release-artifacts/System.map-${KREL}"
+          fi
+          if [ -f ".config" ]; then
+            cp ".config" "${WORKDIR}/release-artifacts/config-${KREL}"
+          fi
+          # .deb packages already carry the kernel version in their filename
+          find "${WORKDIR}" -maxdepth 1 -name "*.deb" -exec cp {} "${WORKDIR}/release-artifacts/" \;
+
+          echo "=== Staged release artifacts ==="
+          ls -lh "${WORKDIR}/release-artifacts/"
         shell: bash
 
       - name: Find the artifacts
         run: |
           set -euo pipefail
           echo "Looking for artifacts..."
-          find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*.deb" -o -name "*.tar.gz" \) -print || true
+          find "${WORKDIR}/release-artifacts" -type f -print || true
         shell: bash
 
       - name: Collect kernel artifacts
         id: collect_artifacts
         run: |
           set -euo pipefail
-          cd "${WORKDIR}"
 
-          artifacts=$(find "${WORKDIR}" -type f \( -name "vmlinux" -o -name "bzImage" -o -name "Image" -o -name "zImage" -o -name "uImage" -o -name "vmlinuz*" -o -name "*.deb" -o -name "*.tar.gz" \) -print || true)
+          artifacts=$(find "${WORKDIR}/release-artifacts" -type f -print || true)
 
           if [ -z "${artifacts}" ]; then
             echo "No kernel artifacts found."
@@ -251,5 +283,22 @@ jobs:
         if: steps.collect_artifacts.outputs.artifacts != ''
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-build-artifacts
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
           path: ${{ steps.collect_artifacts.outputs.artifacts }}
+
+      - name: Publish to release page
+        if: steps.collect_artifacts.outputs.artifacts != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-${{ steps.locate_kernel.outputs.kernelrelease }}-run${{ github.run_number }}
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
+          body: |
+            Automated WSL kernel build.
+
+            - Linux branch: `${{ github.event.inputs.linux_branch }}`
+            - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
+            - Debian packages built: `${{ github.event.inputs.build_deb }}`
+            - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: ${{ steps.collect_artifacts.outputs.artifacts }}
+          draft: false
+          prerelease: false
