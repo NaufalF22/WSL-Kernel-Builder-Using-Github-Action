@@ -2,7 +2,7 @@
 
 <img width="1235" height="628" alt="image" src="https://github.com/user-attachments/assets/8504ecca-1251-4fcf-a6ec-f64eb8c2bccd" />
 
-Using GitHub Actions workflow for builds a custom Linux kernel for WSL2 by merging latest linux-stable source with Microsoft's WSL2 kernel config (arch/x86/configs/config-wsl from microsoft/WSL2-Linux-Kernel).
+Using GitHub Actions workflow to builds a custom Linux kernel for WSL2 by merging latest linux-stable source with Microsoft's WSL2 kernel config (arch/x86/configs/config-wsl from microsoft/WSL2-Linux-Kernel).
 
 This lets you build a kernel that tracks upstream linux-stable more closely than Microsoft's own WSL2 kernel branch, while still using Microsoft's WSL-specific config (Hyper-V drivers, 9p, virtio, etc. enabled; desktop-only drivers like nouveau/amdgpu disabled).
 
