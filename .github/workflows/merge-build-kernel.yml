@@ -33,6 +33,25 @@ jobs:
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
+      - name: Free disk space on runner
+        run: |
+          set -euo pipefail
+          echo "Disk usage before cleanup:"
+          df -h /
+
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -a -f || true
+          sudo apt-get clean || true
+
+          echo "Disk usage after cleanup:"
+          df -h /
+        shell: bash
+
       - name: Prepare workdir
         run: |
           rm -rf "${WORKDIR}"
@@ -142,14 +161,24 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
           if [ -f "arch/x86/configs/config-wsl" ]; then
-            echo "Using MSFT config-wsl as .config"
+            echo "=== Using MSFT config-wsl as .config ==="
             cp arch/x86/configs/config-wsl .config
             # Ensure .config is valid for this kernel version
             make olddefconfig
           else
-            echo "config-wsl not found, falling back to defconfig"
+            echo "=== WARNING: config-wsl not found, falling back to defconfig ==="
+            echo "=== defconfig builds the full desktop driver tree (nouveau, amdgpu, etc.)"
+            echo "=== and WILL exhaust runner disk space. Check the MSFT clone step above."
             make defconfig
           fi
+
+          # Strip debug info regardless of config source - keeps module/vmlinux
+          # sizes sane on disk-constrained runners. Safe to drop for a WSL kernel.
+          scripts/config --disable CONFIG_DEBUG_INFO || true
+          scripts/config --disable CONFIG_DEBUG_INFO_DWARF4 || true
+          scripts/config --disable CONFIG_DEBUG_INFO_DWARF5 || true
+          scripts/config --set-val CONFIG_DEBUG_INFO_NONE y || true
+          make olddefconfig
         shell: bash
 
       - name: Build kernel
