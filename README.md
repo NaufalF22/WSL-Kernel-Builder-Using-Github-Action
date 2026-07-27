@@ -36,6 +36,7 @@ The "Locate compiled kernel" step in the run log prints exact in-tree paths, fil
 
 ## Installing the built kernel in WSL
 
-Open WSL app and choose the bzimage from the zip 
+1. Download the bzimage from the release page
+2. Open WSL app and choose the bzImage here
 
 <img width="1286" height="793" alt="image" src="https://github.com/user-attachments/assets/5bf36085-3728-4789-afdd-af346032d72a" />
