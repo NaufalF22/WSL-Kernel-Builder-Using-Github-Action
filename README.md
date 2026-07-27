@@ -1,6 +1,6 @@
 # WSL Kernel Builder
 
-<img width="1235" height="628" alt="image" src="https://github.com/user-attachments/assets/8504ecca-1251-4fcf-a6ec-f64eb8c2bccd" />
+<img width="1235" height="628" alt="image" src="https://github.com/user-attachments/assets/09330a1d-9057-4eb1-91e6-49df4684ce69" />
 
 Using GitHub Actions workflow to builds a custom Linux kernel for WSL2 by merging latest linux-stable source with Microsoft's WSL2 kernel config (arch/x86/configs/config-wsl from microsoft/WSL2-Linux-Kernel).
 
