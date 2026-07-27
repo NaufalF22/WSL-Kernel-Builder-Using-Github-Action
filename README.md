@@ -21,7 +21,7 @@ From the Actions tab, select Merge and Build Kernel → Run workflow, and set:
 
 Input	Default	Description
 1. msft_branch	linux-msft-wsl-6.18.y (or the latest wsl branch) Branch of microsoft/WSL2-Linux-Kernel to pull config-wsl from
-2. linux_branch	linux-rolling-stable (this is the latest linux kernel, if you want to boot other kernel rename this) Branch of git.kernel.org/.../linux.git to build
+2. linux_branch	linux-rolling-stable (this is the latest linux kernel, if you want to compile other kernel rename this) Branch of git.kernel.org/.../linux.git to build
 3. build_deb	false	Set to true to also produce installable .deb packages via make bindeb-pkg
 
 ## Output
