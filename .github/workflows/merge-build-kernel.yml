@@ -15,9 +15,62 @@ on:
         description: 'Produce Debian packages'
         required: false
         default: 'false'
+  schedule:
+    # Check kernel.org for new commits on linux-rolling-stable every 6 hours.
+    # Only triggers an actual build if the upstream commit changed since the
+    # last successful build (see the check-update job below).
+    - cron: '0 */6 * * *'
 
 jobs:
+  check-update:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      latest_sha: ${{ steps.check.outputs.latest_sha }}
+    env:
+      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+      LINUX_BRANCH: ${{ github.event.inputs.linux_branch || 'linux-rolling-stable' }}
+    steps:
+      - name: Checkout workflow repo (for build state)
+        uses: actions/checkout@v4
+
+      - id: check
+        name: Compare latest kernel.org commit to last build
+        run: |
+          set -euo pipefail
+          STATE_FILE=".github/state/last-linux-sha-${LINUX_BRANCH}.txt"
+
+          latest_sha="$(git ls-remote "${KERNEL_GIT}" "refs/heads/${LINUX_BRANCH}" | cut -f1)"
+          if [ -z "${latest_sha}" ]; then
+            echo "Could not resolve branch '${LINUX_BRANCH}' on kernel.org" >&2
+            exit 1
+          fi
+          echo "Latest upstream commit: ${latest_sha}"
+
+          last_sha=""
+          if [ -f "${STATE_FILE}" ]; then
+            last_sha="$(cat "${STATE_FILE}")"
+          fi
+          echo "Last built commit:      ${last_sha:-<none recorded>}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manually triggered - building regardless of upstream state."
+            should_build=true
+          elif [ "${latest_sha}" != "${last_sha}" ]; then
+            echo "New commit(s) found on ${LINUX_BRANCH} - build needed."
+            should_build=true
+          else
+            echo "No new commits on ${LINUX_BRANCH} since last build - skipping."
+            should_build=false
+          fi
+
+          echo "should_build=${should_build}" >> "$GITHUB_OUTPUT"
+          echo "latest_sha=${latest_sha}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
   merge-build:
+    needs: check-update
+    if: needs.check-update.outputs.should_build == 'true'
     runs-on: [ubuntu-latest]
     permissions:
       contents: write
@@ -25,6 +78,9 @@ jobs:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
       WORKDIR: ${{ github.workspace }}/kernel-work
+      LINUX_BRANCH: ${{ github.event.inputs.linux_branch || 'linux-rolling-stable' }}
+      MSFT_BRANCH: ${{ github.event.inputs.msft_branch || 'linux-msft-wsl-6.18.y' }}
+      BUILD_DEB: ${{ github.event.inputs.build_deb || 'false' }}
 
     steps:
       - name: Checkout workflow repo (for scripts/artifacts)
@@ -74,9 +130,9 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}"
           echo "Cloning kernel.org stable repo (shallow)..."
-          git clone --depth=1 --branch "${{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src
+          git clone --depth=1 --branch "${LINUX_BRANCH}" "${KERNEL_GIT}" src
           cd src
-          echo "Checked out $(git rev-parse --short HEAD) on ${{ github.event.inputs.linux_branch }}"
+          echo "Checked out $(git rev-parse --short HEAD) on ${LINUX_BRANCH}"
         shell: bash
 
       - id: fetch_msft
@@ -88,18 +144,18 @@ jobs:
           cd "${WORKDIR}"
           rm -rf msft_src || true
           # Try a shallow clone of the MSFT branch into msft_src
-          if git clone --depth=1 --branch "${{ github.event.inputs.msft_branch }}" "${MSFT_REMOTE}" msft_src 2>/dev/null; then
-            echo "Cloned msft/${{ github.event.inputs.msft_branch }} into msft_src"
+          if git clone --depth=1 --branch "${MSFT_BRANCH}" "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+            echo "Cloned msft/${MSFT_BRANCH} into msft_src"
             echo "msft_failed=false" >> "$GITHUB_OUTPUT"
           else
             # Fallback: clone default branch then try to fetch the requested branch
             if git clone --depth=1 "${MSFT_REMOTE}" msft_src 2>/dev/null; then
               cd msft_src
-              if git fetch --depth=1 origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
-                echo "Fetched msft/${{ github.event.inputs.msft_branch }} into msft_src"
+              if git fetch --depth=1 origin "${MSFT_BRANCH}" && git checkout "${MSFT_BRANCH}"; then
+                echo "Fetched msft/${MSFT_BRANCH} into msft_src"
                 echo "msft_failed=false" >> "$GITHUB_OUTPUT"
               else
-                echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}" >&2
+                echo "Failed to fetch msft/${MSFT_BRANCH}" >&2
                 echo "msft_failed=true" >> "$GITHUB_OUTPUT"
                 exit 1
               fi
@@ -187,7 +243,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
+          if [ "${BUILD_DEB}" = "true" ]; then
             echo "Building bzImage, modules, and Debian packages..."
             make -j"$(nproc)" bzImage modules
             make -j"$(nproc)" bindeb-pkg
@@ -295,10 +351,29 @@ jobs:
           body: |
             Automated WSL kernel build.
 
-            - Linux branch: `${{ github.event.inputs.linux_branch }}`
-            - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
-            - Debian packages built: `${{ github.event.inputs.build_deb }}`
+            - Linux branch: `${{ env.LINUX_BRANCH }}` @ `${{ needs.check-update.outputs.latest_sha }}`
+            - MSFT config branch: `${{ env.MSFT_BRANCH }}`
+            - Debian packages built: `${{ env.BUILD_DEB }}`
+            - Trigger: `${{ github.event_name }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: ${{ steps.collect_artifacts.outputs.artifacts }}
           draft: false
           prerelease: false
+
+      - name: Record built commit SHA
+        if: steps.collect_artifacts.outputs.artifacts != ''
+        run: |
+          set -euo pipefail
+          cd "${{ github.workspace }}"
+          mkdir -p .github/state
+          STATE_FILE=".github/state/last-linux-sha-${LINUX_BRANCH}.txt"
+          echo "${{ needs.check-update.outputs.latest_sha }}" > "${STATE_FILE}"
+
+          git add "${STATE_FILE}"
+          if ! git diff --cached --quiet; then
+            git commit -m "Record built kernel commit ${{ needs.check-update.outputs.latest_sha }} (${{ steps.locate_kernel.outputs.kernelrelease }})"
+            git push
+          else
+            echo "State file already up to date, nothing to commit."
+          fi
+        shell: bash
