@@ -1,4 +1,4 @@
-name:  Build ARM64 Linux kernel for WSL
+name: Merge and Build Kernel
 
 on:
   workflow_dispatch:
@@ -18,7 +18,7 @@ on:
 
 jobs:
   merge-build:
-    runs-on: [ubuntu-latest]
+    runs-on: [ubuntu-26.04-arm]
     permissions:
       contents: write
     env:
@@ -189,12 +189,12 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
           if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
-            echo "Building bzImage, modules, and Debian packages..."
-            make -j"$(nproc)" bzImage modules
+            echo "Building Image, modules, and Debian packages..."
+            make -j"$(nproc)" Image modules
             make -j"$(nproc)" bindeb-pkg
           else
-            echo "Building bzImage and modules..."
-            make -j"$(nproc)" bzImage modules
+            echo "Building Image and modules..."
+            make -j"$(nproc)" Image modules
           fi
 
           echo "Disk usage after build:"
@@ -209,7 +209,7 @@ jobs:
           cd "${WORKDIR}/src"
 
           echo "=== Known kernel output locations ==="
-          for f in arch/arm64/boot/bzImage vmlinux System.map .config; do
+          for f in arch/arm64/boot/Image vmlinux System.map .config; do
             if [ -f "$f" ]; then
               echo "FOUND: ${WORKDIR}/src/${f} ($(du -h "$f" | cut -f1))"
             else
@@ -238,8 +238,8 @@ jobs:
 
           mkdir -p "${WORKDIR}/release-artifacts"
 
-          if [ -f "arch/arm64/boot/bzImage" ]; then
-            cp "arch/arm64/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}-${ARCH}"
+          if [ -f "arch/arm64/boot/Image" ]; then
+            cp "arch/arm64/boot/Image" "${WORKDIR}/release-artifacts/Image-${KREL}-${ARCH}"
           fi
           if [ -f "vmlinux" ]; then
             cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}-${ARCH}"
