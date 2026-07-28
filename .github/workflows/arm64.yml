@@ -1,4 +1,4 @@
-name: Merge and Build Kernel
+name: Build ARM64 WSL kernel 
 
 on:
   workflow_dispatch:
