@@ -1,4 +1,4 @@
-name: Merge and Build Kernel
+name: Build Kernel x86 kernel for WSL
 
 on:
   workflow_dispatch:
@@ -25,6 +25,7 @@ jobs:
       MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
       KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
       WORKDIR: ${{ github.workspace }}/kernel-work
+      BUILD_ARCH: x86
 
     steps:
       - name: Checkout workflow repo (for scripts/artifacts)
@@ -233,20 +234,21 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}/src"
           KREL="${{ steps.locate_kernel.outputs.kernelrelease }}"
+          ARCH="${BUILD_ARCH}"
 
           mkdir -p "${WORKDIR}/release-artifacts"
 
           if [ -f "arch/x86/boot/bzImage" ]; then
-            cp "arch/x86/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}"
+            cp "arch/x86/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}-${ARCH}"
           fi
           if [ -f "vmlinux" ]; then
-            cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}"
+            cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}-${ARCH}"
           fi
           if [ -f "System.map" ]; then
-            cp "System.map" "${WORKDIR}/release-artifacts/System.map-${KREL}"
+            cp "System.map" "${WORKDIR}/release-artifacts/System.map-${KREL}-${ARCH}"
           fi
           if [ -f ".config" ]; then
-            cp ".config" "${WORKDIR}/release-artifacts/config-${KREL}"
+            cp ".config" "${WORKDIR}/release-artifacts/config-${KREL}-${ARCH}"
           fi
           # .deb packages already carry the kernel version in their filename
           find "${WORKDIR}" -maxdepth 1 -name "*.deb" -exec cp {} "${WORKDIR}/release-artifacts/" \;
@@ -283,19 +285,20 @@ jobs:
         if: steps.collect_artifacts.outputs.artifacts != ''
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }}-x86
           path: ${{ steps.collect_artifacts.outputs.artifacts }}
 
       - name: Publish to release page
         if: steps.collect_artifacts.outputs.artifacts != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kernel-${{ steps.locate_kernel.outputs.kernelrelease }}-run${{ github.run_number }}
-          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
+          tag_name: kernel-${{ steps.locate_kernel.outputs.kernelrelease }}-x86-run${{ github.run_number }}
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }} (x86)
           body: |
             Automated WSL kernel build.
 
             - Linux branch: `${{ github.event.inputs.linux_branch }}`
+            - Architecture: `x86`
             - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
             - Debian packages built: `${{ github.event.inputs.build_deb }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
