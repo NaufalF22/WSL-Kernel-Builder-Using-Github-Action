@@ -1,0 +1,304 @@
+name: Merge and Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      msft_branch:
+        description: 'MSFT branch to fetch'
+        required: false
+        default: 'linux-msft-wsl-6.18.y'
+      linux_branch:
+        description: 'Linux branch to fetch'
+        required: false
+        default: linux-rolling-stable
+      build_deb:
+        description: 'Produce Debian packages'
+        required: false
+        default: 'false'
+
+jobs:
+  merge-build:
+    runs-on: [ubuntu-latest]
+    permissions:
+      contents: write
+    env:
+      MSFT_REMOTE: https://github.com/microsoft/WSL2-Linux-Kernel.git
+      KERNEL_GIT: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+      WORKDIR: ${{ github.workspace }}/kernel-work
+
+    steps:
+      - name: Checkout workflow repo (for scripts/artifacts)
+        uses: actions/checkout@v4
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Free disk space on runner
+        run: |
+          set -euo pipefail
+          echo "Disk usage before cleanup:"
+          df -h /
+
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -a -f || true
+          sudo apt-get clean || true
+
+          echo "Disk usage after cleanup:"
+          df -h /
+        shell: bash
+
+      - name: Prepare workdir
+        run: |
+          rm -rf "${WORKDIR}"
+          mkdir -p "${WORKDIR}"
+          echo "Disk usage:"
+          df -h || true
+          du -sh . || true
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc fakeroot dpkg-dev curl cpio qemu-utils dwarves
+        shell: bash
+
+      - name: Fetch kernel source
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+          echo "Cloning kernel.org stable repo (shallow)..."
+          git clone --depth=1 --branch "${{ github.event.inputs.linux_branch }}" "${KERNEL_GIT}" src
+          cd src
+          echo "Checked out $(git rev-parse --short HEAD) on ${{ github.event.inputs.linux_branch }}"
+        shell: bash
+
+      - id: fetch_msft
+        name: Clone MSFT into separate folder
+        # Config source only - don't fail the whole build if this can't be fetched.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}"
+          rm -rf msft_src || true
+          # Try a shallow clone of the MSFT branch into msft_src
+          if git clone --depth=1 --branch "${{ github.event.inputs.msft_branch }}" "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+            echo "Cloned msft/${{ github.event.inputs.msft_branch }} into msft_src"
+            echo "msft_failed=false" >> "$GITHUB_OUTPUT"
+          else
+            # Fallback: clone default branch then try to fetch the requested branch
+            if git clone --depth=1 "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+              cd msft_src
+              if git fetch --depth=1 origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
+                echo "Fetched msft/${{ github.event.inputs.msft_branch }} into msft_src"
+                echo "msft_failed=false" >> "$GITHUB_OUTPUT"
+              else
+                echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}" >&2
+                echo "msft_failed=true" >> "$GITHUB_OUTPUT"
+                exit 1
+              fi
+            else
+              echo "Failed to clone MSFT repo" >&2
+              echo "msft_failed=true" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          fi
+        shell: bash
+
+      - name: Copy arch/arm64/configs/ from MSFT (prefer MSFT files)
+        if: steps.fetch_msft.outputs.msft_failed == 'false'
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          # Delete the existing arch/arm64/configs directory
+          if [ -d "arch/arm64/configs" ]; then
+            echo "Deleting arch/arm64/configs/..."
+            git rm -r arch/arm64/configs/ 2>/dev/null || rm -rf arch/arm64/configs/
+          fi
+
+          # Copy arch/arm64/configs/ from MSFT
+          if [ -d "${WORKDIR}/msft_src/arch/arm64/configs" ]; then
+            echo "Copying arch/arm64/configs/ from MSFT..."
+            mkdir -p arch/arm64/configs
+            cp -rf "${WORKDIR}/msft_src/arch/arm64/configs/"* arch/arm64/configs/ 2>/dev/null || true
+            git add arch/arm64/configs/ || true
+            if ! git diff --cached --quiet; then
+              git commit -m "Replace arch/arm64/configs with MSFT version" || true
+            fi
+          else
+            echo "Warning: MSFT arch/arm64/configs/ not found"
+          fi
+        shell: bash
+
+      - name: Delete MSFT folder
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${WORKDIR}/msft_src" || true
+          cd "${WORKDIR}/src"
+          git reflog expire --all --expire=now || true
+          git gc --prune=now --aggressive || true
+
+          echo "Disk usage for ${WORKDIR}/src after cleanup:"
+          df -h || true
+          du -sh . || true
+        shell: bash
+
+      - name: Check disk usage before build kernel
+        run: |
+          echo "Disk usage:"
+          df -h || true
+          du -sh . || true
+        shell: bash
+
+      - name: Configure kernel
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          if [ -f "arch/arm64/configs/config-wsl-arm64" ]; then
+            echo "=== Using MSFT config-wsl as .config ==="
+            cp arch/arm64/configs/config-wsl-arm64 .config
+            # Ensure .config is valid for this kernel version
+            make olddefconfig
+          else
+            echo "=== WARNING: config-wsl not found, falling back to defconfig ==="
+            echo "=== defconfig builds the full desktop driver tree (nouveau, amdgpu, etc.)"
+            echo "=== and WILL exhaust runner disk space. Check the MSFT clone step above."
+            make defconfig
+          fi
+
+          # Strip debug info regardless of config source - keeps module/vmlinux
+          # sizes sane on disk-constrained runners. Safe to drop for a WSL kernel.
+          scripts/config --disable CONFIG_DEBUG_INFO || true
+          scripts/config --disable CONFIG_DEBUG_INFO_DWARF4 || true
+          scripts/config --disable CONFIG_DEBUG_INFO_DWARF5 || true
+          scripts/config --set-val CONFIG_DEBUG_INFO_NONE y || true
+          make olddefconfig
+        shell: bash
+
+      - name: Build kernel
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          if [ "${{ github.event.inputs.build_deb }}" = "true" ]; then
+            echo "Building bzImage, modules, and Debian packages..."
+            make -j"$(nproc)" bzImage modules
+            make -j"$(nproc)" bindeb-pkg
+          else
+            echo "Building bzImage and modules..."
+            make -j"$(nproc)" bzImage modules
+          fi
+
+          echo "Disk usage after build:"
+          df -h || true
+          du -sh . || true
+        shell: bash
+
+      - id: locate_kernel
+        name: Locate compiled kernel
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+
+          echo "=== Known kernel output locations ==="
+          for f in arch/arm64/boot/bzImage vmlinux System.map .config; do
+            if [ -f "$f" ]; then
+              echo "FOUND: ${WORKDIR}/src/${f} ($(du -h "$f" | cut -f1))"
+            else
+              echo "MISSING: ${WORKDIR}/src/${f}"
+            fi
+          done
+
+          echo ""
+          echo "=== Debian packages (built one level above src, if build_deb=true) ==="
+          find "${WORKDIR}" -maxdepth 1 -name "*.deb" -print || true
+
+          echo ""
+          echo "=== Kernel release version ==="
+          kernelrelease="$(make -s kernelrelease)"
+          echo "${kernelrelease}"
+          echo "kernelrelease=${kernelrelease}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Stage release artifacts
+        id: stage_artifacts
+        run: |
+          set -euo pipefail
+          cd "${WORKDIR}/src"
+          KREL="${{ steps.locate_kernel.outputs.kernelrelease }}"
+
+          mkdir -p "${WORKDIR}/release-artifacts"
+
+          if [ -f "arch/arm64/boot/bzImage" ]; then
+            cp "arch/arm64/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}"
+          fi
+          if [ -f "vmlinux" ]; then
+            cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}"
+          fi
+          if [ -f "System.map" ]; then
+            cp "System.map" "${WORKDIR}/release-artifacts/System.map-${KREL}"
+          fi
+          if [ -f ".config" ]; then
+            cp ".config" "${WORKDIR}/release-artifacts/config-${KREL}"
+          fi
+          # .deb packages already carry the kernel version in their filename
+          find "${WORKDIR}" -maxdepth 1 -name "*.deb" -exec cp {} "${WORKDIR}/release-artifacts/" \;
+
+          echo "=== Staged release artifacts ==="
+          ls -lh "${WORKDIR}/release-artifacts/"
+        shell: bash
+
+      - name: Find the artifacts
+        run: |
+          set -euo pipefail
+          echo "Looking for artifacts..."
+          find "${WORKDIR}/release-artifacts" -type f -print || true
+        shell: bash
+
+      - name: Collect kernel artifacts
+        id: collect_artifacts
+        run: |
+          set -euo pipefail
+
+          artifacts=$(find "${WORKDIR}/release-artifacts" -type f -print || true)
+
+          if [ -z "${artifacts}" ]; then
+            echo "No kernel artifacts found."
+            echo "artifacts=" >> "$GITHUB_OUTPUT"
+          else
+            echo "artifacts<<EOF" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "${artifacts}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: Upload build artifacts
+        if: steps.collect_artifacts.outputs.artifacts != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
+          path: ${{ steps.collect_artifacts.outputs.artifacts }}
+
+      - name: Publish to release page
+        if: steps.collect_artifacts.outputs.artifacts != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-${{ steps.locate_kernel.outputs.kernelrelease }}-run${{ github.run_number }}
+          name: ${{ steps.locate_kernel.outputs.kernelrelease }}
+          body: |
+            Automated WSL kernel build.
+
+            - Linux branch: `${{ github.event.inputs.linux_branch }}`
+            - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
+            - Debian packages built: `${{ github.event.inputs.build_deb }}`
+            - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: ${{ steps.collect_artifacts.outputs.artifacts }}
+          draft: false
+          prerelease: false
