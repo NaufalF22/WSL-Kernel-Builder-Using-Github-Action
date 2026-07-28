@@ -15,7 +15,10 @@ on:
         description: 'Produce Debian packages'
         required: false
         default: 'false'
-
+      build_arsitectur:
+        description: 'Kernel Arsitectur'
+        required: false
+        default: 'X86'
 jobs:
   merge-build:
     runs-on: [ubuntu-latest]
@@ -111,29 +114,29 @@ jobs:
           fi
         shell: bash
 
-      - name: Copy arch/x86/configs/ from MSFT (prefer MSFT files)
+      - name: Copy config from MSFT (prefer MSFT files)
         if: steps.fetch_msft.outputs.msft_failed == 'false'
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
 
-          # Delete the existing arch/x86/configs directory
-          if [ -d "arch/x86/configs" ]; then
-            echo "Deleting arch/x86/configs/..."
-            git rm -r arch/x86/configs/ 2>/dev/null || rm -rf arch/x86/configs/
+          # Delete the existing arch/${{ github.event.inputs.build_arsitectur }}/configs directory
+          if [ -d "arch/${{ github.event.inputs.build_arsitectur }}/configs" ]; then
+            echo "Deleting arch/${{ github.event.inputs.build_arsitectur }}/configs/..."
+            git rm -r arch/${{ github.event.inputs.build_arsitectur }}/configs/ 2>/dev/null || rm -rf arch/${{ github.event.inputs.build_arsitectur }}/configs/
           fi
 
-          # Copy arch/x86/configs/ from MSFT
-          if [ -d "${WORKDIR}/msft_src/arch/x86/configs" ]; then
-            echo "Copying arch/x86/configs/ from MSFT..."
-            mkdir -p arch/x86/configs
-            cp -rf "${WORKDIR}/msft_src/arch/x86/configs/"* arch/x86/configs/ 2>/dev/null || true
-            git add arch/x86/configs/ || true
+          # Copy arch/${{ github.event.inputs.build_arsitectur }}/configs/ from MSFT
+          if [ -d "${WORKDIR}/msft_src/arch/${{ github.event.inputs.build_arsitectur }}/configs" ]; then
+            echo "Copying arch/${{ github.event.inputs.build_arsitectur }}/configs/ from MSFT..."
+            mkdir -p arch/${{ github.event.inputs.build_arsitectur }}/configs
+            cp -rf "${WORKDIR}/msft_src/arch/${{ github.event.inputs.build_arsitectur }}/configs/"* arch/${{ github.event.inputs.build_arsitectur }}/configs/ 2>/dev/null || true
+            git add arch/${{ github.event.inputs.build_arsitectur }}/configs/ || true
             if ! git diff --cached --quiet; then
-              git commit -m "Replace arch/x86/configs with MSFT version" || true
+              git commit -m "Replace arch/${{ github.event.inputs.build_arsitectur }}/configs with MSFT version" || true
             fi
           else
-            echo "Warning: MSFT arch/x86/configs/ not found"
+            echo "Warning: MSFT arch/${{ github.event.inputs.build_arsitectur }}/configs/ not found"
           fi
         shell: bash
 
@@ -162,9 +165,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}/src"
-          if [ -f "arch/x86/configs/config-wsl" ]; then
+          if [ -f "arch/${{ github.event.inputs.build_arsitectur }}/configs/config-wsl" ]; then
             echo "=== Using MSFT config-wsl as .config ==="
-            cp arch/x86/configs/config-wsl .config
+            cp arch/${{ github.event.inputs.build_arsitectur }}/configs/config-wsl .config
             # Ensure .config is valid for this kernel version
             make olddefconfig
           else
@@ -208,7 +211,7 @@ jobs:
           cd "${WORKDIR}/src"
 
           echo "=== Known kernel output locations ==="
-          for f in arch/x86/boot/bzImage vmlinux System.map .config; do
+          for f in arch/${{ github.event.inputs.build_arsitectur }}/boot/bzImage vmlinux System.map .config; do
             if [ -f "$f" ]; then
               echo "FOUND: ${WORKDIR}/src/${f} ($(du -h "$f" | cut -f1))"
             else
@@ -236,8 +239,8 @@ jobs:
 
           mkdir -p "${WORKDIR}/release-artifacts"
 
-          if [ -f "arch/x86/boot/bzImage" ]; then
-            cp "arch/x86/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}"
+          if [ -f "arch/${{ github.event.inputs.build_arsitectur }}/boot/bzImage" ]; then
+            cp "arch/${{ github.event.inputs.build_arsitectur }}/boot/bzImage" "${WORKDIR}/release-artifacts/bzImage-${KREL}"
           fi
           if [ -f "vmlinux" ]; then
             cp "vmlinux" "${WORKDIR}/release-artifacts/vmlinux-${KREL}"
@@ -295,7 +298,7 @@ jobs:
           body: |
             Automated WSL kernel build.
 
-            - Linux branch: `${{ github.event.inputs.linux_branch }}`
+            - Linux branch: `${{ github.event.inputs.linux_branch }}-${{ github.event.inputs.build_arsitectur }}`
             - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
             - Debian packages built: `${{ github.event.inputs.build_deb }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
