@@ -1,4 +1,4 @@
-name: Build Kernel x86 kernel for WSL
+name: Build x86 Linux kernel for WSL
 
 on:
   workflow_dispatch:
