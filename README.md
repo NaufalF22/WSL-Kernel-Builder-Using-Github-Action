@@ -42,4 +42,5 @@ The "Locate compiled kernel" step in the run log prints exact in-tree paths, fil
 <img width="1286" height="793" alt="image" src="https://github.com/user-attachments/assets/5bf36085-3728-4789-afdd-af346032d72a" />
 
 ## Reference
-WSL Kernel : https://github.com/microsoft/wsl2-linux-kernel
+WSL kernel : https://github.com/microsoft/wsl2-linux-kernel 
+Linux kernel : https://kernel.org
