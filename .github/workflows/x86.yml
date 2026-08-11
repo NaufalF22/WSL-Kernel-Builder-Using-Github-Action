@@ -81,23 +81,40 @@ jobs:
         shell: bash
 
       - id: fetch_msft
-        name: Clone MSFT into separate folder
+        name: Fetch only arch/x86/configs/ from MSFT
         # Config source only - don't fail the whole build if this can't be fetched.
         continue-on-error: true
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
           rm -rf msft_src || true
-          # Try a shallow clone of the MSFT branch into msft_src
-          if git clone --depth=1 --branch "${{ github.event.inputs.msft_branch }}" "${MSFT_REMOTE}" msft_src 2>/dev/null; then
-            echo "Cloned msft/${{ github.event.inputs.msft_branch }} into msft_src"
+ 
+          fetch_configs_only() {
+            local branch="$1"
+            # Blobless, treeless-ish sparse clone: fetches commit/tree metadata
+            # for a shallow history, then checks out only arch/x86/configs/
+            # instead of downloading the whole kernel source tree.
+            git clone --depth=1 --filter=blob:none --no-checkout \
+              --branch "${branch}" "${MSFT_REMOTE}" msft_src
+            cd msft_src
+            git sparse-checkout init --cone
+            git sparse-checkout set arch/x86/configs
+            git checkout "${branch}"
+            cd ..
+          }
+ 
+          if fetch_configs_only "${{ github.event.inputs.msft_branch }}" 2>/dev/null; then
+            echo "Fetched arch/x86/configs/ from msft/${{ github.event.inputs.msft_branch }}"
             echo "msft_failed=false" >> "$GITHUB_OUTPUT"
           else
-            # Fallback: clone default branch then try to fetch the requested branch
-            if git clone --depth=1 "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+            rm -rf msft_src || true
+            # Fallback: sparse-clone the default branch, then move to the requested one
+            if git clone --depth=1 --filter=blob:none --no-checkout "${MSFT_REMOTE}" msft_src 2>/dev/null; then
               cd msft_src
+              git sparse-checkout init --cone
+              git sparse-checkout set arch/x86/configs
               if git fetch --depth=1 origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
-                echo "Fetched msft/${{ github.event.inputs.msft_branch }} into msft_src"
+                echo "Fetched arch/x86/configs/ from msft/${{ github.event.inputs.msft_branch }}"
                 echo "msft_failed=false" >> "$GITHUB_OUTPUT"
               else
                 echo "Failed to fetch msft/${{ github.event.inputs.msft_branch }}" >&2
@@ -110,6 +127,9 @@ jobs:
               exit 1
             fi
           fi
+ 
+          echo "Disk usage of msft_src (should be small - configs only):"
+          du -sh msft_src || true
         shell: bash
 
       - name: Copy arch/x86/configs/ from MSFT (prefer MSFT files)
