@@ -67,7 +67,7 @@ jobs:
   trigger-arm:
     needs: check-release
     if: needs.check-release.outputs.new_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     steps:
       - name: Trigger arm.yml
         run: |
