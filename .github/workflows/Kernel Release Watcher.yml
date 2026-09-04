@@ -70,7 +70,7 @@ jobs:
   trigger-arm:
     needs: check-release
     if: needs.check-release.outputs.new_release == 'true'
-    runs-on: ubuntu-26.01-arm
+    runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v4
       - name: Trigger arm.yml
