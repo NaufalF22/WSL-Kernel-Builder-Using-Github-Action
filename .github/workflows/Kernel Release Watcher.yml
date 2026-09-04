@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Trigger x86.yml
         run: |
-          gh workflow run x86.yml --repo ${{ github.repository }}
+          gh workflow run x86.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -73,6 +73,6 @@ jobs:
     steps:
       - name: Trigger arm.yml
         run: |
-          gh workflow run arm.yml --repo ${{ github.repository }}
+          gh workflow run arm.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
