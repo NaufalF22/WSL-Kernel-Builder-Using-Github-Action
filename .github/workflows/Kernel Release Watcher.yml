@@ -73,6 +73,6 @@ jobs:
     steps:
       - name: Trigger arm.yml
         run: |
-          gh workflow run .github/workflows/arm.yml
+          gh workflow run .github/workflows/arm64.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
