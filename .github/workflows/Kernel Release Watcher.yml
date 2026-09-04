@@ -60,6 +60,7 @@ jobs:
     if: needs.check-release.outputs.new_release == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Trigger x86.yml
         run: |
           gh workflow run .github/workflows/x86.yml
@@ -69,8 +70,9 @@ jobs:
   trigger-arm:
     needs: check-release
     if: needs.check-release.outputs.new_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.01-arm
     steps:
+      - uses: actions/checkout@v4
       - name: Trigger arm.yml
         run: |
           gh workflow run .github/workflows/arm64.yml
