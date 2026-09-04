@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Trigger x86.yml
         run: |
-         run x86.yml 
+         gh workflow run x86.yml 
 
   trigger-arm:
     needs: check-release
@@ -71,4 +71,4 @@ jobs:
     steps:
       - name: Trigger arm.yml
         run: |
-          run arm.yml 
+          gh workflow run arm.yml 
