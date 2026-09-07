@@ -74,7 +74,7 @@ jobs:
           echo "Cloning kernel.org stable repo (shallow)..."
           git clone --depth=1 --branch linux-rolling-stable "${KERNEL_GIT}" src
           cd src
-          echo "Checked out $(git rev-parse --short HEAD) on ${{ github.event.inputs.linux_branch }}"
+          echo "Checked out $(git rev-parse --short HEAD) on linux-rolling-stable"
         shell: bash
 
       - id: fetch_msft
