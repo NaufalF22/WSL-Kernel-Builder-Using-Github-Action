@@ -314,7 +314,7 @@ jobs:
           body: |
             Automated WSL kernel build.
 
-            - Linux branch: `Master`
+            - Linux branch: `master`
             - Architecture: `arm64`
             - MSFT config branch: `${{ github.event.inputs.msft_branch }}`
             - Debian packages built: `${{ github.event.inputs.build_deb }}`
