@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           cd "${WORKDIR}"
           echo "Cloning kernel.org stable repo (shallow)..."
-          git clone --depth=1 --branch master "${KERNEL_GIT}" src
+          git clone --branch master "${KERNEL_GIT}" src
           cd src
           echo "Checked out $(git rev-parse --short HEAD) on master"
         shell: bash
@@ -91,7 +91,7 @@ jobs:
             # Blobless, treeless-ish sparse clone: fetches commit/tree metadata
             # for a shallow history, then checks out only arch/arm64/configs/
             # instead of downloading the whole kernel source tree.
-            git clone --depth=1 --filter=blob:none --no-checkout \
+            git clone --filter=blob:none --no-checkout \
               --branch "${branch}" "${MSFT_REMOTE}" msft_src
             cd msft_src
             git sparse-checkout init --cone
