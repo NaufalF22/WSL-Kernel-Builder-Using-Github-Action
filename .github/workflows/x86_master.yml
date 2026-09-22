@@ -91,7 +91,7 @@ jobs:
             # Blobless, treeless-ish sparse clone: fetches commit/tree metadata
             # for a shallow history, then checks out only arch/x86/configs/
             # instead of downloading the whole kernel source tree.
-            git clone --depth=1 --filter=blob:none --no-checkout \
+            git clone --filter=blob:none --no-checkout \
               --branch "${branch}" "${MSFT_REMOTE}" msft_src
             cd msft_src
             git sparse-checkout init --cone
@@ -106,11 +106,11 @@ jobs:
           else
             rm -rf msft_src || true
             # Fallback: sparse-clone the default branch, then move to the requested one
-            if git clone --depth=1 --filter=blob:none --no-checkout "${MSFT_REMOTE}" msft_src 2>/dev/null; then
+            if git clone --filter=blob:none --no-checkout "${MSFT_REMOTE}" msft_src 2>/dev/null; then
               cd msft_src
               git sparse-checkout init --cone
               git sparse-checkout set arch/x86/configs
-              if git fetch --depth=1 origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
+              if git fetch origin "${{ github.event.inputs.msft_branch }}" && git checkout "${{ github.event.inputs.msft_branch }}"; then
                 echo "Fetched arch/x86/configs/ from msft/${{ github.event.inputs.msft_branch }}"
                 echo "msft_failed=false" >> "$GITHUB_OUTPUT"
               else
