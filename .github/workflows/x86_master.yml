@@ -71,8 +71,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "${WORKDIR}"
-          echo "Cloning kernel.org stable repo (shallow)..."
-          git clone --depth=1 --branch master "${KERNEL_GIT}" src
+          echo "Cloning kernel.org stable repo"
+          git clone --branch master "${KERNEL_GIT}" src
           cd src
           echo "Checked out $(git rev-parse --short HEAD) on master"
         shell: bash
