@@ -30,7 +30,7 @@ jobs:
         working-directory: project-churro
         run: |
           curl -L --fail -o recovery.zip \
-            https://dl.google.com/device/recovery/moonstone-user/16452207/recovery.zip
+          https://dl.google.com/device/recovery/ruby-user/16693588/recovery.zip        
           unzip -o recovery.zip
           rm recovery.zip
           ls -lh
