@@ -1,0 +1,282 @@
+# Build the LineageOS 24.0 x86_64 PC ISO (device/pc/pc_x86_64).
+#
+# GitHub-hosted runners cannot do this build (6 h job limit, far too little disk),
+# so this runs on a SELF-HOSTED runner with the label "lineage-builder".
+#
+# One-time setup on the runner machine:
+#   1. Install Docker and register a runner with labels: self-hosted, linux, x64, lineage-builder
+#   2. mkdir -p /srv/lineage     (needs ~300+ GB free; holds the source tree, out/, and the keys)
+#   3. Optional but recommended: Secure Boot keys as a repo secret
+#        tar -C /path/to/keys -cz . | base64 -w0     -> secret PC_SECUREBOOT_KEYS_TGZ_B64
+#      Without it, a key pair is generated once into /srv/lineage/keys and reused.
+#      BACK THAT DIRECTORY UP: a new key means every PC has to enroll again.
+#
+# Optional repository variables: FEDORA_VERSION, PC_SECUREBOOT_NAME, SYNC_JOBS,
+#   BUILD_JOBS, GOGC, GOMEMLIMIT, MIN_FREE_GB, MESA_HOST_MESON_ARGS
+
+name: Build LineageOS PC ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Build variant
+        type: choice
+        options: [userdebug, user, eng]
+        default: userdebug
+      clean:
+        description: Wipe out/ first (full rebuild)
+        type: boolean
+        default: false
+      run_tests:
+        description: Run the unit tests before the long build
+        type: boolean
+        default: true
+      release:
+        description: Publish the result as a GitHub pre-release
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+  # A full build takes hours; enable a schedule only if the runner can afford it.
+  # schedule:
+  #   - cron: "0 3 * * 0"
+
+permissions:
+  contents: write # needed to create releases
+
+# Both runs would share one source tree, so never run two builds at once.
+concurrency:
+  group: lineage-pc-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      LINEAGE_BRANCH: lineage-24.0
+      BUILD_ROOT: /srv/lineage/24.0
+      DEVICE_DIR: device/pc/pc_x86_64
+      PC_SECUREBOOT_KEYS: /srv/lineage/keys
+      PC_SECUREBOOT_NAME: ${{ vars.PC_SECUREBOOT_NAME || 'LineageOS PC (CI)' }}
+      LUNCH_TARGET: lineage_pc_x86_64-cp2a-${{ inputs.variant || 'userdebug' }}
+      SYNC_JOBS: ${{ vars.SYNC_JOBS || '8' }}
+      MIN_FREE_GB: ${{ vars.MIN_FREE_GB || '300' }}
+
+    steps:
+      - name: Install host packages
+        run: |
+          sudo apt install 
+            git git-lfs gnupg2 curl wget which findutils diffutils procps-ng hostname \
+            tar gzip bzip2 xz zip unzip rsync patch file \
+            gcc gcc-c++ make bison flex gperf gawk autoconf213 \
+            python3 python-unversioned-command perl-Digest-SHA \
+            ncurses-devel ncurses-compat-libs libX11-devel mesa-libGL-devel \
+            openssl openssl-devel zlib-devel readline-devel libxml2 libxslt \
+            glibc-devel glibc-static libstdc++-static lz4 lzop squashfs-tools \
+            grub2-tools grub2-tools-extra grub2-tools-minimal \
+            grub2-efi-x64-modules grub2-pc-modules \
+            sbsigntools xorriso mtools dosfstools rpm cpio \
+            linux-firmware \
+            meson ninja-build cmake python3-mako python3-pyyaml pkgconf-pkg-config \
+            llvm22-devel clang22-devel libclc22-devel libclc22-spirv \
+            spirv-llvm-translator22-devel rust cargo bindgen-cli
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          chmod a+x /usr/local/bin/repo
+          git config --global --add safe.directory '*'
+          git config --global user.name  "lineage-ci"
+          git config --global user.email "lineage-ci@users.noreply.github.com"
+          git config --global color.ui false
+          git lfs install --skip-repo
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the device tree is small; a full clone lets us fetch it locally later
+
+      - name: Preflight
+        run: |
+          mkdir -p "$BUILD_ROOT" "$PC_SECUREBOOT_KEYS"
+          avail=$(df -BG --output=avail "$BUILD_ROOT" | tail -n1 | tr -dc '0-9')
+          mem=$(free -g | awk '/^Mem:/{print $2}')
+          echo "Free disk: ${avail} GB, RAM: ${mem} GB"
+          if [ "$avail" -lt "$MIN_FREE_GB" ]; then
+            echo "::error::Only ${avail} GB free on $BUILD_ROOT (need ${MIN_FREE_GB}+). Free space or lower MIN_FREE_GB."
+            exit 1
+          fi
+          if [ "$mem" -lt 28 ]; then
+            echo "::warning::Only ${mem} GB RAM. Soong analysis wants ~32 GB or a large zram/swap."
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            VERSION="$GITHUB_REF_NAME"
+          else
+            VERSION="dev-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=${VERSION//\//-}" >> "$GITHUB_ENV"
+
+      - name: Clean out/
+        if: inputs.clean
+        run: rm -rf "$BUILD_ROOT/out"
+
+      - name: Sync LineageOS 24.0 plus the PC projects
+        run: |
+          cd "$BUILD_ROOT"
+          [ -d .repo ] || repo init -u https://github.com/LineageOS/android.git -b "$LINEAGE_BRANCH" --git-lfs
+          mkdir -p .repo/local_manifests
+          # Use the manifest from the commit being built, not the one on GitHub's default branch.
+          cp "$GITHUB_WORKSPACE/local_manifest.xml" .repo/local_manifests/pc.xml
+          repo sync -c -j"$SYNC_JOBS" --force-sync --no-clone-bundle --no-tags
+
+      - name: Use this commit as the device tree
+        run: |
+          cd "$BUILD_ROOT/$DEVICE_DIR" || { echo "::error::$DEVICE_DIR is missing after repo sync; check local_manifest.xml"; exit 1; }
+          git fetch --no-tags "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+          git checkout -qf --detach FETCH_HEAD
+          git log -1 --oneline
+
+      - name: Unit tests
+        if: github.event_name != 'workflow_dispatch' || inputs.run_tests
+        run: |
+          cd "$BUILD_ROOT"
+          export ANDROID_BUILD_TOP="$PWD"
+          for d in kernel initrd iso secureboot vulkan terminal bootlog; do
+            echo "::group::unittest $d"
+            (cd "$DEVICE_DIR/$d" && python3 -m unittest)
+            echo "::endgroup::"
+          done
+
+      - name: Secure Boot keys
+        env:
+          KEYS_TGZ_B64: ${{ secrets.PC_SECUREBOOT_KEYS_TGZ_B64 }}
+        run: |
+          cd "$BUILD_ROOT"
+          umask 077
+          if [ -n "$KEYS_TGZ_B64" ]; then
+            printf '%s' "$KEYS_TGZ_B64" | base64 -d | tar -xz -C "$PC_SECUREBOOT_KEYS"
+          fi
+          if [ ! -s "$PC_SECUREBOOT_KEYS/pc-secureboot.key" ]; then
+            echo "::warning::No Secure Boot keys in secrets or in $PC_SECUREBOOT_KEYS; generating a new pair. Back it up: PCs that enrolled an older key must enroll this one again."
+            "$DEVICE_DIR/secureboot/make_keys.sh"
+          fi
+          ls -l "$PC_SECUREBOOT_KEYS" | sed 's/^/  /'
+
+      - name: Fetch shim and stage firmware
+        run: |
+          cd "$BUILD_ROOT"
+          [ -f out/secureboot/shim/shimx64.efi ] || "$DEVICE_DIR/secureboot/fetch_shim.sh"
+          "$DEVICE_DIR/kernel/stage_firmware.sh"
+
+      - name: Mesa host tools (mesa_clc, vtn_bindgen2)
+        env:
+          MESA_HOST_MESON_ARGS: ${{ vars.MESA_HOST_MESON_ARGS }}
+        run: |
+          cd "$BUILD_ROOT"
+          dest=prebuilts/mesa-build-deps
+          if [ -x "$dest/mesa_clc" ] && [ -x "$dest/vtn_bindgen2" ]; then
+            echo "Already built, reusing."
+            exit 0
+          fi
+          rm -rf out/mesa-host
+          # Flags follow the README (LLVM 22, mesa-clc on, every driver off). The README elides
+          # the rest of its "meson setup ..." line, so adjust here or via MESA_HOST_MESON_ARGS.
+          meson setup out/mesa-host external/mesa3d \
+            --buildtype=release \
+            -Dllvm=enabled \
+            -Dmesa-clc=enabled -Dinstall-mesa-clc=true \
+            -Dgallium-drivers= -Dvulkan-drivers= -Dplatforms= \
+            -Dglx=disabled -Degl=disabled -Dgbm=disabled \
+            -Dgles1=disabled -Dgles2=disabled -Dopengl=false \
+            $MESA_HOST_MESON_ARGS
+          ninja -C out/mesa-host
+          mkdir -p "$dest"
+          for t in mesa_clc vtn_bindgen2; do
+            f=$(find out/mesa-host -type f -name "$t" -perm -u+x | head -n1)
+            [ -n "$f" ] || { echo "::error::$t was not produced by the Mesa host build"; exit 1; }
+            install -m755 "$f" "$dest/$t"
+          done
+
+      - name: Build the kernel
+        run: |
+          cd "$BUILD_ROOT"
+          "$DEVICE_DIR/kernel/build_kernel.sh"
+
+      - name: Build system image and ISO
+        env:
+          GOGC: ${{ vars.GOGC || '50' }}
+          GOMEMLIMIT: ${{ vars.GOMEMLIMIT || '20GiB' }}
+          BUILD_JOBS: ${{ vars.BUILD_JOBS }}
+        run: |
+          cd "$BUILD_ROOT"
+          set +u # build/envsetup.sh reads unset variables
+          source build/envsetup.sh
+          lunch "$LUNCH_TARGET"
+          m -j"${BUILD_JOBS:-$(nproc)}" systemimage
+          python3 "$DEVICE_DIR/iso/build_iso.py" out/lineage-pc.iso
+
+      - name: Stage release files
+        run: |
+          cd "$BUILD_ROOT"
+          dist="$GITHUB_WORKSPACE/dist"
+          name="lineage-pc-$VERSION"
+          rm -rf "$dist"; mkdir -p "$dist"
+          # Public certificate only. The private key never leaves $PC_SECUREBOOT_KEYS.
+          cp "$PC_SECUREBOOT_KEYS/pc-secureboot.der" "$dist/ENROLL_THIS_KEY_IN_MOKMANAGER.der"
+          size=$(stat -c %s out/lineage-pc.iso)
+          if [ "$size" -gt 2000000000 ]; then
+            # GitHub release assets are limited to 2 GiB each.
+            split -d -a 2 -b 1900M out/lineage-pc.iso "$dist/$name.iso.part"
+            echo "Split into parts; rejoin with: cat $name.iso.part* > $name.iso"
+          else
+            cp out/lineage-pc.iso "$dist/$name.iso"
+          fi
+          {
+            echo "$(sha256sum out/lineage-pc.iso | cut -d' ' -f1)  $name.iso"
+            (cd "$dist" && sha256sum "$name".iso.part* 2>/dev/null || true)
+          } > "$dist/SHA256SUMS"
+          {
+            echo "### LineageOS PC ISO"
+            echo "- Target: \`$LUNCH_TARGET\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Size: $(du -h out/lineage-pc.iso | cut -f1)"
+            echo "- SHA-256: \`$(sha256sum out/lineage-pc.iso | cut -d' ' -f1)\`"
+            echo "- Secure Boot key (SHA-256): \`$(openssl x509 -inform DER -in "$PC_SECUREBOOT_KEYS/pc-secureboot.der" -noout -fingerprint -sha256 | cut -d= -f2)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$dist"
+
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineage-pc-${{ env.VERSION }}
+          path: dist/*
+          compression-level: 0
+          retention-days: 7
+
+      - name: Publish release
+        if: github.ref_type == 'tag' || inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
+          name: LineageOS PC ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+          files: dist/*
+          body: |
+            LineageOS 24.0 live ISO for x86_64 PCs.
+
+            With UEFI Secure Boot on, enroll `ENROLL_THIS_KEY_IN_MOKMANAGER.der` once per computer
+            (the ISO also carries it, with step-by-step help). Check downloads against `SHA256SUMS`.
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            /srv/lineage/24.0/out/error.log
+            /srv/lineage/24.0/out/soong.log
+            /srv/lineage/24.0/out/verbose.log.gz
+          if-no-files-found: ignore
+          retention-days: 7
